@@ -1,4 +1,4 @@
-name: conoff
+name: codoff
 channels:
   - conda-forge
   - bioconda
@@ -7,5 +7,4 @@ dependencies:
   - "python=3.10"
   - biopython
   - pip
-  - bioconda::ncbi-genome-download
   - scipy

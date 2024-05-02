@@ -36,6 +36,15 @@ pip install -e .
 
 ### Example of inferring codon usage differences for the *crt* operon in a chromosomal and plasmid context
 
+Uncompress the example results (trimmed down to save space) from this git repo for Staphylococcus warneri st. 413:
+
+```
+# within codoff git repo
+tar -zxvf Sw_LK413.tar.gz
+```
+
+or run it antiSMASH for yourself to get the real life experience
+
 ```
 # Download assembly for Staphylococcus warneri st. LK413 / p3-SID855
 wget https://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/025/145/625/GCF_025145625.2_ASM2514562v2/GCF_025145625.2_ASM2514562v2_genomic.fna.gz
@@ -45,12 +54,17 @@ gunzip GCF_025145625.2_ASM2514562v2_genomic.fna.gz
 # their convenient web-server and afterwards download & uncompress the results. Link to antiSMASH webserver:
 # https://antismash.secondarymetabolites.org/
 antismash --genefinding-tool prodigal --output-dir Sw_LK413 --output-basename LK413 --minimal GCF_025145625.2_ASM2514562v2_genomic.fna
+```
 
+Now run codoff, first providing the chromosome embedded _crt_ instance as the focal gene cluster of interest and after the plasmid
+embedded _crt_ instance as the focal gene cluster:
+
+```
 # run codoff for crt (BGC encoding for staphyloxanthin) found in chromosome:
-codoff -b Sw_LK413/c00001_NZ_JALX...region001.gbk -g Sw_LK413/LK413.gbk -p -o crt_in_chromosome.txt
+codoff -b Sw_LK413/NZ_JALXLO020000001.1.region001.gbk -g Sw_LK413/LK413.gbk -p -o crt_in_chromosome.txt
 
 # run codoff for crt (BGC encoding for staphyloxanthin) found in plasmid:
-codoff -b Sw_LK413/c00002_NZ_JALX...region001.gbk -g Sw_LK413/LK413.gbk -p -o crt_in_plasmid.txt
+codoff -b Sw_LK413/NZ_JALXLO020000002.1.region001.gbk -g Sw_LK413/LK413.gbk -p -o crt_in_plasmid.txt
 ```
 
 The `crt_in_chromsome.txt` should contain the following results:

@@ -12,6 +12,9 @@ from codoff import util
 from operator import itemgetter
 import numpy 
 import math
+import pkg_resources
+
+version = pkg_resources.require("codoff")[0].version
 
 def create_parser():
     """ Parse arguments """
@@ -31,6 +34,7 @@ def create_parser():
     parser.add_argument('-b', '--bgc_genbanks', nargs='+', help="Path to BGC GenBank(s) for isolate. Locus tags must match with tags in full-genome GenBank.", required=True, default=None)
     parser.add_argument('-o', '--output', help="Path to output file.", required=True, default=None)
     parser.add_argument('-p', '--compute_empirical_pval', action='store_true', help="Compute empirical P-value for observed cosine distance being as different than expected to the background codon usage distribution.", required=False, default=False)
+    parser.add_argument('-v', '--version', action='store_true', help="Print version and exist", required=False, default=False)
     args = parser.parse_args()
     return args
 
@@ -39,6 +43,10 @@ def main():
     """
     Void function which runs primary workflow for program.
     """
+
+    sys.stderr.write('Running version ' + str(version) + ' of codoff!\n')
+    if len(sys.argv)>1 and ('-v' in set(sys.argv) or '--version' in set(sys.argv)):
+        sys.exit(0)
 
     """
     PARSE REQUIRED INPUTS

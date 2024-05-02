@@ -1,6 +1,0 @@
-Metadata-Version: 2.1
-Name: conoff
-Version: 1.0.0
-Summary: Program to measure the irregularity of the codon usage for a single genomic region (e.g. a BGC, phage, etc.) relative to the full genome.
-Author-email: Rauf Salamzade <salamzader@gmail.com>
-License-File: LICENSE

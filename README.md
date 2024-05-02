@@ -41,10 +41,11 @@ pip install -e .
 wget https://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/025/145/625/GCF_025145625.2_ASM2514562v2/GCF_025145625.2_ASM2514562v2_genomic.fna.gz
 gunzip GCF_025145625.2_ASM2514562v2_genomic.fna.gz
 
-# Run antiSMASH in environment with antiSMASH available (not part of lsaBGC conda environment!)
+# Run antiSMASH in environment with antiSMASH available (not a part of codoff conda environment!) or run it on
+# their convenient web-server and afterwards download & uncompress the results. Link to antiSMASH webserver:
+# https://antismash.secondarymetabolites.org/
 antismash --genefinding-tool prodigal --output-dir Sw_LK413 --output-basename LK413 --minimal GCF_025145625.2_ASM2514562v2_genomic.fna
 
-# with lsaBGC conda env activated
 # run codoff for crt (BGC encoding for staphyloxanthin) found in chromosome:
 codoff -b Sw_LK413/c00001_NZ_JALX...region001.gbk -g Sw_LK413/LK413.gbk -p -o crt_in_chromosome.txt
 

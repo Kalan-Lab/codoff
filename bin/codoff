@@ -11,6 +11,7 @@ from scipy import stats, spatial
 from codoff import util
 from operator import itemgetter
 import numpy 
+import math
 
 def create_parser():
     """ Parse arguments """
@@ -153,10 +154,10 @@ def main():
 
     if compute_empirical_pval:
         emp_pval = 0
-        util.printProgressBar(0, l, prefix = 'Progress:', suffix = 'Complete', length = 10)
+        util.printProgressBar(0, 10, prefix = 'Progress:', suffix = 'Complete', length = 50)
         for sim in range(0, 10000):
             if sim % 1000 == 0 and sim > 0:
-                util.printProgressBar(i + 1, l, prefix = 'Progress:', suffix = 'Complete', length = 10)
+                util.printProgressBar(math.floor(sim/1000) + 1, 10, prefix = 'Progress:', suffix = 'Complete', length = 50)
             random.shuffle(gene_list)
             limit_hit = False
             cod_count = 0

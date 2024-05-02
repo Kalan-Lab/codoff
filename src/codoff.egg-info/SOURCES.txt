@@ -1,0 +1,10 @@
+LICENSE
+README.md
+pyproject.toml
+bin/codoff
+src/codoff/__init__.py
+src/codoff/util.py
+src/codoff.egg-info/PKG-INFO
+src/codoff.egg-info/SOURCES.txt
+src/codoff.egg-info/dependency_links.txt
+src/codoff.egg-info/top_level.txt

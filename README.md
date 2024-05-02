@@ -45,10 +45,10 @@ gunzip GCF_025145625.2_ASM2514562v2_genomic.fna.gz
 antismash --genefinding-tool prodigal --output-dir Sw_LK413 --output-basename LK413 --minimal GCF_025145625.2_ASM2514562v2_genomic.fna
 
 # with lsaBGC conda env activated
-# run compareBGCtoGenomeCodonUsage for crt (BGC encoding for staphyloxanthin) found in chromosome:
+# run codoff for crt (BGC encoding for staphyloxanthin) found in chromosome:
 codoff -b Sw_LK413/c00001_NZ_JALX...region001.gbk -g Sw_LK413/LK413.gbk -p -o crt_in_chromosome.txt
 
-# run compareBGCtoGenomeCodonUsage for crt (BGC encoding for staphyloxanthin) found in plasmid:
+# run codoff for crt (BGC encoding for staphyloxanthin) found in plasmid:
 codoff -b Sw_LK413/c00002_NZ_JALX...region001.gbk -g Sw_LK413/LK413.gbk -p -o crt_in_plasmid.txt
 ```
 

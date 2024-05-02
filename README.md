@@ -21,7 +21,7 @@ Coming soon!
 
 ### Conda Manual
 
-```
+```bash
 # 1. clone Git repo and change directories into it!
 git clone https://github.com/raufs/codoff/
 cd codoff/
@@ -38,14 +38,14 @@ pip install -e .
 
 Uncompress the example results (trimmed down to save space) from this git repo for Staphylococcus warneri st. 413:
 
-```
+```bash
 # within codoff git repo
 tar -zxvf Sw_LK413.tar.gz
 ```
 
 or run it antiSMASH for yourself to get the real life experience
 
-```
+```bash
 # Download assembly for Staphylococcus warneri st. LK413 / p3-SID855
 wget https://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/025/145/625/GCF_025145625.2_ASM2514562v2/GCF_025145625.2_ASM2514562v2_genomic.fna.gz
 gunzip GCF_025145625.2_ASM2514562v2_genomic.fna.gz
@@ -59,7 +59,7 @@ antismash --genefinding-tool prodigal --output-dir Sw_LK413 --output-basename LK
 Now run codoff, first providing the chromosome embedded _crt_ instance as the focal gene cluster of interest and after the plasmid
 embedded _crt_ instance as the focal gene cluster:
 
-```
+```bash
 # run codoff for crt (BGC encoding for staphyloxanthin) found in chromosome:
 codoff -b Sw_LK413/NZ_JALXLO020000001.1.region001.gbk -g Sw_LK413/LK413.gbk -p -o crt_in_chromosome.txt
 

@@ -153,9 +153,10 @@ def main():
 
     if compute_empirical_pval:
         emp_pval = 0
+        printProgressBar(0, l, prefix = 'Progress:', suffix = 'Complete', length = 10)
         for sim in range(0, 10000):
             if sim % 1000 == 0 and sim > 0:
-                sys.stderr.write('completed %d/10000 simulations\n' % sim)
+                printProgressBar(i + 1, l, prefix = 'Progress:', suffix = 'Complete', length = 10)
             random.shuffle(gene_list)
             limit_hit = False
             cod_count = 0

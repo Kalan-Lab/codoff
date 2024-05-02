@@ -20,10 +20,10 @@ def create_parser():
 	Affiliation: Kalan Lab, UW Madison, Department of Medical Microbiology and Immunology
 		
 	This program compares the codon-usage distribution of a focal-region/BGC (provided as a GenBank with CDS features) 
-    to the codon usage of the background genome (gathered from CDS features of a full-genome GenBank file - also an 
-    output of antiSMASH). It will report the cosine distance and Spearman correlation between the two profiles. Only 
-    CDS features which are of length divisible by 3 will be considered. It can accept multiple region-specific/BGC 
-    GenBanks in the case that they are fragmented across multiple scaffolds.
+	to the codon usage of the background genome (gathered from CDS features of a full-genome GenBank file - also an 
+	output of antiSMASH). It will report the cosine distance and Spearman correlation between the two profiles. Only 
+	CDS features which are of length divisible by 3 will be considered. It can accept multiple region-specific/BGC 
+	GenBanks in the case that they are fragmented across multiple scaffolds.
     """, formatter_class=argparse.RawTextHelpFormatter)
 
     parser.add_argument('-g', '--full_genome_genbank', help="Path to annotated full-genome GenBank for isolate's genome.", required=True, default=None)
@@ -153,10 +153,10 @@ def main():
 
     if compute_empirical_pval:
         emp_pval = 0
-        printProgressBar(0, l, prefix = 'Progress:', suffix = 'Complete', length = 10)
+        util.printProgressBar(0, l, prefix = 'Progress:', suffix = 'Complete', length = 10)
         for sim in range(0, 10000):
             if sim % 1000 == 0 and sim > 0:
-                printProgressBar(i + 1, l, prefix = 'Progress:', suffix = 'Complete', length = 10)
+                util.printProgressBar(i + 1, l, prefix = 'Progress:', suffix = 'Complete', length = 10)
             random.shuffle(gene_list)
             limit_hit = False
             cod_count = 0

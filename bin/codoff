@@ -1,4 +1,7 @@
-#!/home/salamzade/Multicellularity_and_BGC_Abundances/Software_Dev/codoff_mamba_env/bin/python3.10
+#!/usr/bin/env python3
+
+import warnings
+warnings.filterwarnings("ignore", category=DeprecationWarning)
 
 import os
 import random

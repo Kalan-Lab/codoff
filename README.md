@@ -80,7 +80,13 @@ So we see the cosine distance between the BGC codon usage profile and the backgr
 
 ## Algorithm for computing empirical p-value
 
-To calculate an empirical P-value, we gather codons for each gene across the genome. First the codon frequency distribution of the focal-region/BGC genes is compared to the codon frequency distribution of the background genome (all other genes). After, we perform 10,000 simulations where in each simulation we shuffle the full genome-wide set of genes and go through the first N genes until the same number of codons as are present in the focal region/BGC/GCF are observed. The cosine distance between the observed codon frequency is compared to the remainder of the genome-wide codon distribution and checked for whether it is higher than what was actually observed for the BGC; if so, then an empirical P-value counter is appended a count of 1. The final empirical P-value produced is simply this count plus a pseudocount of 1 over 10,001.
+To calculate an empirical P-value, we gather codons for each gene across the genome. First the codon frequency distribution of the focal-region/BGC genes is compared to the codon frequency distribution of the background genome (all other genes; genes which have lengths not divisible by 3 are ignored). After, we perform 10,000 simulations where in each simulation we shuffle the full genome-wide set of genes and go through the first N genes until the same number of codons as are present in the focal region/BGC/GCF are observed. The cosine distance between the observed codon frequency is compared to the remainder of the genome-wide codon distribution and checked for whether it is higher than what was actually observed for the BGC; if so, then an empirical P-value counter is appended a count of 1. The final empirical P-value produced is simply this count plus a pseudocount of 1 over 10,001.
+
+![figure](https://github.com/Kalan-Lab/codoff/blob/main/codoff_empirical_pvalue_image.png?raw=true)
+
+## Usage 
+
+Usage is identical to the original `compareBGCtoGenomeCodonUsage.py` script. 
 
 ```
 usage: codoff [-h] -g FULL_GENOME_GENBANK -b BGC_GENBANKS [BGC_GENBANKS ...] -o OUTPUT [-p]
@@ -109,7 +115,3 @@ optional arguments:
   -p, --compute_empirical_pval
                         Compute empirical P-value for observed cosine distance being as different than expected to the background codon usage distribution.
 ```
-
-## Usage 
-
-Usage is identical to the original `compareBGCtoGenomeCodonUsage.py` script. 

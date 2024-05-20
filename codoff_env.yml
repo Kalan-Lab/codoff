@@ -8,3 +8,6 @@ dependencies:
   - biopython
   - pip
   - scipy
+  - seaborn
+  - matplotlib
+  - pyrodigal

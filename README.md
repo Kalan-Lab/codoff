@@ -67,6 +67,8 @@ codoff -f Sw_LK413/NZ_JALXLO020000001.1.region001.gbk -g Sw_LK413/LK413.gbk
 
 Here we also requested the `-p` argument to generate a plot of the simulated distribution of cosine distances for regions of similar size to the focal region and the actual cosine distance for the focal distance (blue vertical line):
 
+![figure](https://raw.githubusercontent.com/Kalan-Lab/codoff/main/codoff_actual_empirical_pvalue_image.svg)
+
 ### Detailed example with interpretation
 
 A more detailed example on how homologous instances of the same five-gene operon differ in codon usage between an instance on the plasmid and chromosome can be found on the wiki: [Examples of inferring codon usage for the *crt* operon in a chromosomal and plasmid context](https://github.com/Kalan-Lab/codoff/wiki/Examples-of-inferring-codon-usage-differences-for-the-crt-operon-in-a-chromosomal-and-plasmid-context)
@@ -75,7 +77,7 @@ A more detailed example on how homologous instances of the same five-gene operon
 
 To calculate an empirical P-value, we gather codons for each gene across the genome. First the codon frequency distribution of the focal-region/BGC genes is compared to the codon frequency distribution of the background genome (all other genes; genes which have lengths not divisible by 3 are ignored). After, we perform 10,000 simulations where in each simulation we shuffle the full genome-wide set of genes and go through the first N genes until the same number of codons as are present in the focal region/BGC/GCF are observed. The cosine distance between the observed codon frequency is compared to the remainder of the genome-wide codon distribution and checked for whether it is higher than what was actually observed for the BGC; if so, then an empirical P-value counter is appended a count of 1. The final empirical P-value produced is simply this count plus a pseudocount of 1 over 10,001.
 
-![figure](https://github.com/Kalan-Lab/codoff/blob/main/codoff_empirical_pvalue_image.png?raw=true)
+ <!---![figure](https://github.com/Kalan-Lab/codoff/blob/main/codoff_empirical_pvalue_image.png?raw=true) --->
 
 ## Usage 
 

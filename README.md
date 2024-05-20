@@ -4,11 +4,9 @@
 
 codoff is largely adapted from the `compareBGCtoGenomeCodonUsage.py` script in the [*lsa*BGC](https://github.com/Kalan-Lab/lsaBGC) suite and presented here separately just to make it easy to install via bioconda, therefore, please cite:
 
-```
-Evolutionary investigations of the biosynthetic diversity in the skin microbiome using lsaBGC
-Rauf Salamzade, J.Z. Alex Cheong, Shelby Sandstrom, Mary Hannah Swaney, Reed M. Stubbendieck,
-Nicole Lane Starr, Cameron R. Currie, Anne Marie Singh, and Lindsay R. Kalan
-```
+
+> [Evolutionary investigations of the biosynthetic diversity in the skin microbiome using *lsa*BGC](https://www.microbiologyresearch.org/content/journal/mgen/10.1099/mgen.0.000988). *Microbial Genomics 2023.* Rauf Salamzade, J.Z. Alex Cheong, Shelby Sandstrom, Mary Hannah Swaney, Reed M. Stubbendieck, Nicole Lane Starr, Cameron R. Currie, Anne Marie Singh, and Lindsay R. Kalan
+
 
 If you have suggestions or feedback, please let me know in the GitHub issues.
 

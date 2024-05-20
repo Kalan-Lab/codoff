@@ -163,3 +163,13 @@ CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
 OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ```
+
+## Acknowledgments
+
+codoff utilizes pyrodigal underneath to perform gene calling for bacterial genomes when requested: 
+
+> Pyrodigal: Python bindings and interface to Prodigal, an efficient method for gene prediction in prokaryotes. *JOSS*, 2022. Martin Larallde.
+
+Earlier work on using codon usage discrepancies to infer genomic islands was previously done by Waack et al. 2006:
+
+> Score-based prediction of genomic islands in prokaryotic genomes using hidden Markov models. _BMC Bioinformatics_, 2006. Stephan Waack, Oliver Keller, Roman Asper, Thomas Brodag, Carsten Damm, Wolfgang Florian Fricke, Katharina Surovcik, Peter Meinicke, and Rainer Merkl.

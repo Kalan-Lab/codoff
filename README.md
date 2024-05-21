@@ -2,6 +2,8 @@
 
 **codoff**: A program to measure the irregularity of the codon usage for a focal genomic region (e.g. a BGC, phage, etc.) relative to the full genome. It was primarily designed to work of the output of antiSMASH biosynthetic gene cluster (BGC) predictions - but can be more broadly applied as well, with options allowing users to provide a genome in FASTA format and simply specify the coordinates of the focal region of interest. It computes an empirical P-value as to the significance of observing a codon usage profile for the focal region so discordant with what is observed for the larger genome-wide context.
 
+**This is useful because it could indicate that the focal gene cluster has been horizontally transfered. While quick and easy to assess, we encourage users to further investigate if HGT is indeed responsible for any such signal.**
+
 codoff is largely adapted from the `compareBGCtoGenomeCodonUsage.py` script in the [*lsa*BGC](https://github.com/Kalan-Lab/lsaBGC) suite and presented here separately just to make it easy to install via bioconda, therefore, please cite:
 
 

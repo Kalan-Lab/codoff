@@ -10,7 +10,7 @@ codoff is largely adapted from the `compareBGCtoGenomeCodonUsage.py` script in t
 > [Evolutionary investigations of the biosynthetic diversity in the skin microbiome using *lsa*BGC](https://www.microbiologyresearch.org/content/journal/mgen/10.1099/mgen.0.000988). *Microbial Genomics 2023.* Rauf Salamzade, J.Z. Alex Cheong, Shelby Sandstrom, Mary Hannah Swaney, Reed M. Stubbendieck, Nicole Lane Starr, Cameron R. Currie, Anne Marie Singh, and Lindsay R. Kalan
 
 
-If you have suggestions or feedback, please let me know in the GitHub issues.
+If you have suggestions or feedback, please let us know in the GitHub issues.
 
 ## Installation
 
@@ -59,13 +59,13 @@ codoff -f Sw_LK413/NZ_JALXLO020000001.1.region001.gbk -g Sw_LK413/LK413.gbk
 
 ### Example 2: Providing a genome-wide FASTA file and coordinates of a focal region
 
-(WORKS ONLY FOR BACTERIA) Full genome is provided as a FASTA or GenBank file. If CDS features are missing gene calling is performed using [pyrodigal](https://github.com/althonos/pyrodigal) Afterwards, the focal region is determined through user speciefied coordinates.
+(WORKS ONLY FOR BACTERIA) Full genome is provided as a FASTA or GenBank file. If CDS features are missing, gene calling is performed using [pyrodigal](https://github.com/althonos/pyrodigal). Afterwards, the focal region is determined through user speciefied coordinates.
 
 ```bash
  codoff -s NZ_JALXLO020000001.1 -a 341425 -b 388343 -g Sw_LK413/LK413.fna -p example_plot.svg
 ```
 
-Here we also requested the `-p` argument to generate a plot of the simulated distribution of cosine distances for regions of similar size to the focal region and the actual cosine distance for the focal distance (blue vertical line):
+Here, we also requested the `-p` argument to generate a plot of the simulated distribution of cosine distances for regions of similar size to the focal region and the actual cosine distance for the focal distance (blue vertical line):
 
 ![figure](https://raw.githubusercontent.com/Kalan-Lab/codoff/main/codoff_actual_empirical_pvalue_image.svg)
 

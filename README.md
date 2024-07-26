@@ -1,6 +1,6 @@
 # codoff
 
-**codoff**: A program to measure the irregularity of the codon usage for a focal genomic region (e.g. a BGC, phage, etc.) relative to the full genome. It was primarily designed to work of the output of antiSMASH biosynthetic gene cluster (BGC) predictions - but can be more broadly applied as well, with options allowing users to provide a genome in FASTA format and simply specify the coordinates of the focal region of interest. It computes an empirical P-value as to the significance of observing a codon usage profile for the focal region so discordant with what is observed for the larger genome-wide context.
+**codoff**: A program to measure the irregularity of the codon usage for a focal genomic region (e.g. a BGC, phage, etc.) relative to the full genome. It was primarily designed to work off the output of antiSMASH biosynthetic gene cluster (BGC) predictions - but can be more broadly applied as well, with options allowing users to provide a genome in FASTA format and simply specify the coordinates of the focal region of interest. It computes an empirical P-value as to the significance of observing a codon usage profile for the focal region so discordant with what is observed for the larger genome-wide context.
 
 <img src="https://github.com/Kalan-Lab/codoff/assets/4260723/05b6c7f1-9e8f-4865-b0fd-758c933bab83" width="300"> 
 

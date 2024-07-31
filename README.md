@@ -26,6 +26,13 @@ conda create -n codoff_env -c conda-forge -c bioconda codoff
 conda activate codoff_env
 ```
 
+### Pip
+
+```bash
+# in some environment with python >=3.10 available
+pip install codoff
+```
+
 ### Conda Manual
 
 ```bash

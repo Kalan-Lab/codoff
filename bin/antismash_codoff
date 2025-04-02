@@ -14,22 +14,22 @@ from codoff import codoff
 version = pkg_resources.require("codoff")[0].version
 
 def create_parser():
-    """ Parse arguments """
-    parser = argparse.ArgumentParser(description="""
+	""" Parse arguments """
+	parser = argparse.ArgumentParser(description="""
 	Program: codoff
 	Author: Rauf Salamzade
 	Affiliation: Kalan Lab, UW Madison, Department of Medical Microbiology and Immunology
 		
 	Simple wrapper of codoff for analysis of antiSMASH results for a single genome. 
-    """, formatter_class=argparse.RawTextHelpFormatter)
+	""", formatter_class=argparse.RawTextHelpFormatter)
 
-    parser.add_argument('-a', '--antismash-dir', help="Path to annotated full-genome in GenBank or FASTA format for isolate's genome.", required=True)
-    parser.add_argument('-o', '--output-dir', help="Result direcotry.", required=True)
-    parser.add_argument('-v', '--version', action='store_true', help="Print version and exist", required=False, default=False)
-    parser.add_argument('-p', '--processors', type=int, help="Number of codoff jobs to run at once [Default is 1].", required=False, default=1)
+	parser.add_argument('-a', '--antismash-dir', help="Path to annotated full-genome in GenBank or FASTA format for isolate's genome.", required=True)
+	parser.add_argument('-o', '--output-dir', help="Result direcotry.", required=True)
+	parser.add_argument('-v', '--version', action='store_true', help="Print version and exist", required=False, default=False)
+	parser.add_argument('-p', '--processors', type=int, help="Number of codoff jobs to run at once [Default is 1].", required=False, default=1)
 
-    args = parser.parse_args()
-    return args
+	args = parser.parse_args()
+	return args
 
 def antismash_bgc_region_process(inputs):
 	try:
@@ -43,75 +43,75 @@ def antismash_bgc_region_process(inputs):
 		sys.stderr.write('Unable to process codoff inputs.\n')
 		sys.stderr.write(traceback.format_exc() + '\n')
 		sys.exit(1)
-          
+		  
 def main():
-    """
-    Void function which runs primary workflow for program.
-    """
+	"""
+	Void function which runs primary workflow for program.
+	"""
 
-    sys.stderr.write('Running version ' + str(version) + ' of codoff!\n')
-    if len(sys.argv)>1 and ('-v' in set(sys.argv) or '--version' in set(sys.argv)):
-        sys.exit(0)
+	sys.stderr.write('Running version ' + str(version) + ' of codoff!\n')
+	if len(sys.argv)>1 and ('-v' in set(sys.argv) or '--version' in set(sys.argv)):
+		sys.exit(0)
 
-    """
-    PARSE INPUTS
-    """
-    myargs = create_parser()
+	"""
+	PARSE INPUTS
+	"""
+	myargs = create_parser()
 
-    antismash_dir = os.path.abspath(myargs.antismash_dir) + '/'
-    output_dir = os.path.abspath(myargs.output_dir) + '/'
-    processors = myargs.processors
+	antismash_dir = os.path.abspath(myargs.antismash_dir) + '/'
+	output_dir = os.path.abspath(myargs.output_dir) + '/'
+	processors = myargs.processors
 
-    try:
-        assert(os.path.isdir(antismash_dir))
-    except:
-        sys.stderr.write('Error: Unalbe to validate antiSMASH directory exists.\n')
-        sys.exit(1)
+	try:
+		assert(os.path.isdir(antismash_dir))
+	except:
+		sys.stderr.write('Error: Unalbe to validate antiSMASH directory exists.\n')
+		sys.exit(1)
 
-    if os.path.isdir(output_dir):
-        sys.stderr.write('Error: Output directory already exists. Please provide a different output directory.\n')
-        sys.exit(1)
-    else:
-        os.makedirs(output_dir)
+	if os.path.isdir(output_dir):
+		sys.stderr.write('Error: Output directory already exists. Please provide a different output directory.\n')
+		sys.exit(1)
+	else:
+		os.makedirs(output_dir)
 
-    """
-    START WORKFLOW
-    """
+	"""
+	START WORKFLOW
+	"""
 
-    # Process antiSMASH results directory
+	# Process antiSMASH results directory
 
-    genome_gbk = None
-    bgc_gbks = []
-    for f in os.listdir(antismash_dir):
-        if f.endswith('.gbk'):
-            if not '.region' in f:
-                genome_gbk = os.path.join(antismash_dir, f)
-            elif '.region' in f:
-                bgc_gbks.append(os.path.join(antismash_dir, f))
+	genome_gbk = None
+	bgc_gbks = []
+	for f in os.listdir(antismash_dir):
+		if f.endswith('.gbk'):
+			if not '.region' in f:
+				genome_gbk = os.path.join(antismash_dir, f)
+			elif '.region' in f:
+				bgc_gbks.append(os.path.join(antismash_dir, f))
 
-    if genome_gbk == None:
-        sys.stderr.write('Unable to find full genome GenBank file in antiSMASH results directory.\n')
-        sys.exit(1)
-    
-    if len(bgc_gbks) == 0:
-        sys.stderr.write('Unalbe to find any BGC GenBank files in antiSMASH results directory.\n')
-        sys.exit(1)
-    
-    codoff_inputs = []
-    for bgc_gbk in bgc_gbks:
-        bgc_gbk_name = bgc_gbk.split('/')[-1].split('.gbk')[0]
-        bgc_outfile = output_dir + bgc_gbk_name + '.txt'
-        bgc_plotfile = output_dir + bgc_gbk_name + '.svg'
-        ci = [bgc_gbk, genome_gbk, bgc_plotfile, bgc_outfile]
-        codoff_inputs.append(ci)
+	if genome_gbk == None:
+		sys.stderr.write('Unable to find full genome GenBank file in antiSMASH results directory.\n')
+		sys.exit(1)
+	
+	if len(bgc_gbks) == 0:
+		sys.stderr.write('Unalbe to find any BGC GenBank files in antiSMASH results directory.\n')
+		sys.exit(1)
+	
+	codoff_inputs = []
+	for bgc_gbk in bgc_gbks:
+		bgc_gbk_name = bgc_gbk.split('/')[-1].split('.gbk')[0]
+		bgc_outfile = output_dir + bgc_gbk_name + '.txt'
+		bgc_plotfile = output_dir + bgc_gbk_name + '.svg'
+		ci = [bgc_gbk, genome_gbk, bgc_plotfile, bgc_outfile]
+		codoff_inputs.append(ci)
 
-    msg = "Running codoff on %d BGC regions in %s" % (len(codoff_inputs), antismash_dir) 
-    sys.stdout.write(msg + '\n')
+	msg = "Running codoff on %d BGC regions in %s" % (len(codoff_inputs), antismash_dir) 
+	sys.stdout.write(msg + '\n')
 
-    p = multiprocessing.Pool(processes=processors)
-    for _ in tqdm.tqdm(p.imap_unordered(antismash_bgc_region_process, codoff_inputs), total=len(codoff_inputs)):
-        pass
-    p.close()
-        
+	p = multiprocessing.Pool(processes=processors)
+	for _ in tqdm.tqdm(p.imap_unordered(antismash_bgc_region_process, codoff_inputs), total=len(codoff_inputs)):
+		pass
+	p.close()
+		
 if __name__ == '__main__':
-    main()
+	main()

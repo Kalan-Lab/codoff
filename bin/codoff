@@ -4,351 +4,106 @@ import warnings
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 
 import os
-import random
 import sys
-from Bio import SeqIO
-from Bio.Seq import Seq
 import argparse
-from collections import defaultdict
-from scipy import stats, spatial
-from codoff import util
-from operator import itemgetter
-import numpy 
-import math
 import pkg_resources
+from codoff import codoff
 import traceback
-import seaborn as sns
-import matplotlib.pyplot as plt
 
 version = pkg_resources.require("codoff")[0].version
 
 def create_parser():
-    """ Parse arguments """
-    parser = argparse.ArgumentParser(description="""
+	""" Parse arguments """
+	parser = argparse.ArgumentParser(description="""
 	Program: codoff
 	Author: Rauf Salamzade
 	Affiliation: Kalan Lab, UW Madison, Department of Medical Microbiology and Immunology
-		
+	
 	This program compares the codon-usage distribution of a focal-region/BGC to the codon usage of 
-    the background genome. It will report the cosine distance and Spearman correlation between the 
-    two profiles, as well as an empirical P-value for whether the codon usage is siginficantly different
-    between the focal region and background genome. Only CDS features which are of length divisible 
-    by 3 will be considered. 
-                                     
-    Two modes of input are supported:
-                                     
-    1. (WORKS FOR BOTH EUKARYOTES & BACTERIA) Focal region and full-genome provided as GenBank files with 
-       CDS features (compatible with antiSMASH outputs). Multiple focal region GenBank files can be provided, 
-       e.g. consider a biosynthetic gene cluster split across multiple scaffolds due to assembly fragmentation. 
-                                                                         
-       Example command: 
-                                     
-       $ codoff -f Sw_LK413/NZ_JALXLO020000001.1.region001.gbk -g Sw_LK413/LK413.gbk
-                                     
-    2. (WORKS ONLY FOR BACTERIA) Full genome is provided as a FASTA or GenBank file. If CDS features are missing
-       gene calling is performed using pyrodigal. Afterwards, the focal region is determined through user
-       speciefied coordinates.
-    
-       Example command:
-                                     
-       $ codoff -s NZ_JALXLO020000001.1 -a 341425 -b 388343 -g Sw_LK413/LK413.fna 
+	the background genome. It will report the cosine distance and Spearman correlation between the 
+	two profiles, as well as an empirical P-value for whether the codon usage is siginficantly different
+	between the focal region and background genome. Only CDS features which are of length divisible 
+	by 3 will be considered. 
+									 
+	Two modes of input are supported:
+									 
+	1. (WORKS FOR BOTH EUKARYOTES & BACTERIA) Focal region and full-genome provided as GenBank files with 
+	   CDS features (compatible with antiSMASH outputs). Multiple focal region GenBank files can be provided, 
+	   e.g. consider a biosynthetic gene cluster split across multiple scaffolds due to assembly fragmentation. 
+																		 
+	   Example command: 
+									 
+	   $ codoff -f Sw_LK413/NZ_JALXLO020000001.1.region001.gbk -g Sw_LK413/LK413.gbk
+									 
+	2. (WORKS ONLY FOR BACTERIA) Full genome is provided as a FASTA or GenBank file. If CDS features are missing
+	   gene calling is performed using pyrodigal. Afterwards, the focal region is determined through user
+	   speciefied coordinates.
+	
+	   Example command:
+									 
+	   $ codoff -s NZ_JALXLO020000001.1 -a 341425 -b 388343 -g Sw_LK413/LK413.fna 
  
-    """, formatter_class=argparse.RawTextHelpFormatter)
+	""", formatter_class=argparse.RawTextHelpFormatter)
 
-    parser.add_argument('-g', '--full_genome', help="Path to annotated full-genome in GenBank or FASTA format for isolate's genome.", required=True, default=None)
-    parser.add_argument('-s', '--scaffold', help="Scaffold identifier for focal region.", required=False, default=None)
-    parser.add_argument('-a', '--start_coord', type=int, help="Start coordinate for focal region.", required=False, default=None)
-    parser.add_argument('-b', '--end_coord', type=int, help="End coordinate for focal region.", required=False, default=None)
-    parser.add_argument('-f', '--focal_genbanks', nargs='+', help="Path to focal region GenBank(s) for isolate. Locus tags must match with tags in full-genome GenBank.", required=False, default=None)
-    parser.add_argument('-o', '--outfile', help="Path to output file.", required=False, default=None)
-    parser.add_argument('-p', '--plot_outfile', help="Plot output file name (will be in SVG format). If not provided, no plot will be made.", required=False, default=None)
-    parser.add_argument('-v', '--version', action='store_true', help="Print version and exist", required=False, default=False)
-    args = parser.parse_args()
-    return args
+	parser.add_argument('-g', '--full-genome', help="Path to a full-genome in GenBank or FASTA format. If GenBank file provided, CDS features are required.", required=True, default=None)
+	parser.add_argument('-s', '--scaffold', help="Scaffold identifier for focal region.", required=False, default=None)
+	parser.add_argument('-a', '--start-coord', type=int, help="Start coordinate for focal region.", required=False, default=None)
+	parser.add_argument('-b', '--end-coord', type=int, help="End coordinate for focal region.", required=False, default=None)
+	parser.add_argument('-f', '--focal-genbanks', nargs='+', help="Path to focal region GenBank(s) for isolate. Locus tags must match with tags in full-genome GenBank.", required=False, default=None)
+	parser.add_argument('-o', '--outfile', help="Path to output file [Default is standard output].", required=False, default="stdout")
+	parser.add_argument('-p', '--plot-outfile', help="Plot output file name (will be in SVG format). If not provided, no plot will be made.", required=False, default=None)
+	parser.add_argument('-v', '--version', action='store_true', help="Print version and exist", required=False, default=False)
+	args = parser.parse_args()
+	return args
 
 valid_bases = set(['A', 'C', 'G', 'T'])
 def main():
-    """
-    Void function which runs primary workflow for program.
-    """
+	"""
+	Void function which runs primary workflow for program.
+	"""
 
-    sys.stderr.write('Running version ' + str(version) + ' of codoff!\n')
-    if len(sys.argv)>1 and ('-v' in set(sys.argv) or '--version' in set(sys.argv)):
-        sys.exit(0)
+	sys.stderr.write('Running version ' + str(version) + ' of codoff!\n')
+	if len(sys.argv)>1 and ('-v' in set(sys.argv) or '--version' in set(sys.argv)):
+		sys.exit(0)
 
-    """
-    PARSE REQUIRED INPUTS
-    """
-    myargs = create_parser()
+	"""
+	PARSE INPUTS
+	"""
+	myargs = create_parser()
 
-    full_genome_file = os.path.abspath(myargs.full_genome)
-    focal_scaffold = myargs.scaffold
-    focal_start_coord = myargs.start_coord
-    focal_end_coord = myargs.end_coord
-    focal_genbank_files = myargs.focal_genbanks
-    outfile = myargs.outfile
-    plot_outfile = myargs.plot_outfile
+	full_genome_file = os.path.abspath(myargs.full_genome)
+	focal_scaffold = myargs.scaffold
+	focal_start_coord = myargs.start_coord
+	focal_end_coord = myargs.end_coord
+	focal_genbank_files = myargs.focal_genbanks
+	outfile = myargs.outfile
+	plot_outfile = myargs.plot_outfile
 
-    """
-    START WORKFLOW
-    """
-
-    cod_freq_dict_focal = defaultdict(int)
-    cod_freq_dict_background = defaultdict(int)
-    all_cods = set([])
-    all_codon_counts = defaultdict(int)
-    gene_codons = defaultdict(list)
-    gene_list = []
-    foc_codon_count = 0
-    if focal_genbank_files != None:
-        try:
-            # parse GenBank files of focal regions for locus_tags
-            focal_lts = set([])
-            for foc_gbk in focal_genbank_files:
-                with open(foc_gbk) as ogbk:
-                    for rec in SeqIO.parse(ogbk, 'genbank'):
-                        for feature in rec.features:
-                            if not feature.type == 'CDS': continue
-                            locus_tag = None
-                            try:
-                                locus_tag = feature.qualifiers.get('locus_tag')[0]
-                            except:
-                                try:
-                                    locus_tag = feature.qualifiers.get('gene')[0]
-                                except:
-                                    locus_tag = feature.qualifiers.get('protein_id')[0]
-                            assert(locus_tag != None)
-                            focal_lts.add(locus_tag)
-
-            # parse nucleotide coding sequences from full-genome Genbank
-            locus_tag_sequences = {}
-            with open(full_genome_file) as ofgbk:
-                for rec in SeqIO.parse(ofgbk, 'genbank'):
-                    full_sequence = str(rec.seq)
-                    for feature in rec.features:
-                        if not feature.type == 'CDS': continue
-                        locus_tag = None
-                        try:
-                            locus_tag = feature.qualifiers.get('locus_tag')[0]
-                        except:
-                            try:
-                                locus_tag = feature.qualifiers.get('gene')[0]
-                            except:
-                                locus_tag = feature.qualifiers.get('protein_id')[0]
-                        assert(locus_tag != None)
-                        all_coords, start, end, direction, is_multi_part = util.parseCDSCoord(str(feature.location))
-                        if end >= len(full_sequence): end = len(full_sequence)
-                        nucl_seq = ''
-                        for sc, ec, dc in sorted(all_coords, key=itemgetter(0), reverse=False):
-                            if ec >= len(full_sequence):
-                                nucl_seq += full_sequence[sc - 1:]
-                            else:
-                                nucl_seq += full_sequence[sc - 1:ec]
-
-                        if direction == '-':
-                            nucl_seq = str(Seq(nucl_seq).reverse_complement())
-                        locus_tag_sequences[locus_tag] = nucl_seq
-
-            # get codon frequencies for CDS in BGC and background genome
-            for locus_tag in locus_tag_sequences:
-                gene_list.append(locus_tag)
-                seq = locus_tag_sequences[locus_tag]
-                if not len(str(seq))%3 == 0:
-                    sys.stderr.write("The locus tag %s is ignored because it was not of length 3.\n" % locus_tag)
-                    continue
-                codon_seq = [str(seq)[i:i + 3] for i in range(0, len(str(seq)), 3)]
-                for cod in list(codon_seq):
-                    if not(len(cod) == 3 and cod[0] in valid_bases and cod[1] in valid_bases and cod[2] in valid_bases): continue
-                    gene_codons[locus_tag].append(cod)
-                    all_codon_counts[cod] += 1
-                    if locus_tag in focal_lts:
-                        foc_codon_count += 1
-                        cod_freq_dict_focal[cod] += 1
-                    else:
-                        cod_freq_dict_background[cod] += 1
-                    all_cods.add(cod)
-
-        except:
-            sys.stderr.write('Issues with determinining codon usage info for inputs with focal region and genome provided as GenBank.\n')
-            raise RuntimeError(traceback.format_exc())
-    elif focal_scaffold != None and focal_start_coord != None and focal_end_coord != None:
-        if util.checkIsGenBankWithCDS(full_genome_file):
-            try:
-                # parse nucleotide coding sequences from full-genome Genbank
-                locus_tag_sequences = {}
-                focal_lts = set([])
-                with open(full_genome_file) as ofgbk:
-                    for rec in SeqIO.parse(ofgbk, 'genbank'):
-                        full_sequence = str(rec.seq)
-                        for feature in rec.features:
-                            if not feature.type == 'CDS': continue
-                            locus_tag = None
-                            try:
-                                locus_tag = feature.qualifiers.get('locus_tag')[0]
-                            except:
-                                try:
-                                    locus_tag = feature.qualifiers.get('gene')[0]
-                                except:
-                                    locus_tag = feature.qualifiers.get('protein_id')[0]
-                            assert(locus_tag != None)
-                            all_coords, start, end, direction, is_multi_part = util.parseCDSCoord(str(feature.location))
-                            if end >= len(full_sequence): end = len(full_sequence)
-                            nucl_seq = ''
-                            for sc, ec, dc in sorted(all_coords, key=itemgetter(0), reverse=False):
-                                if ec >= len(full_sequence):
-                                    nucl_seq += full_sequence[sc - 1:]
-                                else:
-                                    nucl_seq += full_sequence[sc - 1:ec]
-
-                            if direction == '-':
-                                nucl_seq = str(Seq(nucl_seq).reverse_complement())
-                            locus_tag_sequences[locus_tag] = nucl_seq
-                            if rec.id == focal_scaffold and start >= focal_start_coord and end <= focal_end_coord:
-                                focal_lts.add(locus_tag)
-
-                # get codon frequencies for CDS in focal and background genome
-                for locus_tag in locus_tag_sequences:
-                    gene_list.append(locus_tag)
-                    seq = locus_tag_sequences[locus_tag]
-                    if not len(str(seq))%3 == 0:
-                        sys.stderr.write("The locus tag %s is ignored because it was not of length 3.\n" % locus_tag)
-                        continue
-                    codon_seq = [str(seq)[i:i + 3] for i in range(0, len(str(seq)), 3)]
-                    for cod in list(codon_seq):
-                        if not(len(cod) == 3 and cod[0] in valid_bases and cod[1] in valid_bases and cod[2] in valid_bases): continue
-                        gene_codons[locus_tag].append(cod)
-                        all_codon_counts[cod] += 1
-                        if locus_tag in focal_lts:
-                            foc_codon_count += 1
-                            cod_freq_dict_focal[cod] += 1
-                        else:
-                            cod_freq_dict_background[cod] += 1
-                        all_cods.add(cod)
-            except:
-                sys.stderr.write('Issues with determinining codon usage info for inputs with focal region and genome provided as GenBank.\n')
-                raise RuntimeError(traceback.format_exc())
-        else:
-            try:
-                try:
-                    assert(util.confirmFasta(full_genome_file))
-                except:
-                    sys.stderr.write('Input genome does not appear to be either GenBank with CDS nor a FASTA file.\n')
-                    raise RuntimeError(traceback.format_exc())
-                
-                # parse nucleotide coding sequences from full-genome Genbank
-                locus_tag_sequences, focal_lts = util.geneCallUsingPyrodigal(full_genome_file, focal_scaffold, focal_start_coord, focal_end_coord)
-                
-                # get codon frequencies for CDS in focal and background genome
-                for locus_tag in locus_tag_sequences:
-                    gene_list.append(locus_tag)
-                    seq = locus_tag_sequences[locus_tag]
-                    if not len(str(seq))%3 == 0:
-                        sys.stderr.write("The locus tag %s is ignored because it was not of length 3.\n" % locus_tag)
-                        continue
-                    codon_seq = [str(seq)[i:i + 3] for i in range(0, len(str(seq)), 3)]
-                    for cod in list(codon_seq):
-                        if not(len(cod) == 3 and cod[0] in valid_bases and cod[1] in valid_bases and cod[2] in valid_bases): continue
-                        gene_codons[locus_tag].append(cod)
-                        all_codon_counts[cod] += 1
-                        if locus_tag in focal_lts:
-                            foc_codon_count += 1
-                            cod_freq_dict_focal[cod] += 1
-                        else:
-                            cod_freq_dict_background[cod] += 1
-                        all_cods.add(cod)
-            except:
-                sys.stderr.write('Issues with determinining codon usage info for inputs with focal region and genome provided as GenBank.\n')
-                raise RuntimeError(traceback.format_exc())
-
-    else:
-        sys.stderr.write('Insuffient input provided!\n')
-        raise RuntimeError()
-    
-    cod_order = []
-    foc_cod_freqs = []
-    bkg_cod_freqs = []
-    for cod in sorted(all_cods):
-        cod_order.append(cod)
-        foc_cod_freqs.append(cod_freq_dict_focal[cod])
-        bkg_cod_freqs.append(cod_freq_dict_background[cod])
-
-    foc_cod_freqs = numpy.array(foc_cod_freqs, dtype=numpy.float64)
-    bkg_cod_freqs = numpy.array(bkg_cod_freqs, dtype=numpy.float64)
-    
-    # compute stats
-    rho, spm_pval, cosine_distance, euclidean_distance = ["NA"]*4
-    try:
-        rho, spm_pval = stats.spearmanr(foc_cod_freqs, bkg_cod_freqs)
-        cosine_distance = spatial.distance.cosine(foc_cod_freqs, bkg_cod_freqs)
-        #euclidean_distance = spatial.distance.euclidean(foc_cod_freqs, bkg_cod_freqs)
-    except:
-        sys.stderr.write('Issues with computing stats!\n')
-        sys.exit(1)
-
-    emp_pval = 0
-    util.printProgressBar(0, 10, prefix = 'Progress:', suffix = 'Complete', length = 50)
-    sim_cosine_distances = []
-    for sim in range(0, 10000):
-        if sim % 1000 == 0 and sim > 0:
-            util.printProgressBar(math.floor(sim/1000) + 1, 10, prefix = 'Progress:', suffix = 'Complete', length = 50)
-        random.shuffle(gene_list)
-        limit_hit = False
-        cod_count = 0
-        foc_codon_counts = defaultdict(int)
-        for g in gene_list:
-            if not limit_hit:
-                for c in gene_codons[g]:
-                    foc_codon_counts[c] += 1
-                    cod_count += 1
-                    if cod_count >= foc_codon_count:
-                        limit_hit = True
-                        break
-            else:
-                break
-
-        foc_cod_freqs = []
-        bg_cod_freqs = []
-        for cod in cod_order:
-            foc_cod_freqs.append(foc_codon_counts[cod])
-            bg_cod_freqs.append(all_codon_counts[cod] - foc_codon_counts[cod])
-        foc_cod_freqs = numpy.array(foc_cod_freqs, dtype=numpy.float64)
-        bg_cod_freqs = numpy.array(bg_cod_freqs, dtype=numpy.float64)
-        sim_cosine_distance = spatial.distance.cosine(foc_cod_freqs, bg_cod_freqs)
-        sim_cosine_distances.append(sim_cosine_distance)
-        if sim_cosine_distance >= cosine_distance:
-            emp_pval += 1
-
-    emp_pval_freq = (emp_pval+1)/10001
-
-    if outfile != None:
-        outfile = os.path.abspath(outfile)
-        output_handle = open(outfile, 'w')
-        output_handle.write('Empirical P-value\t%f\n' % emp_pval_freq)
-        output_handle.write('Cosine Distance\t%f\n' % round(cosine_distance, 3))
-        output_handle.write('Spearman\'s Rho\t%f\n' % round(rho, 3))
-        output_handle.write('Codons\t%s\n' % ', '.join(cod_order))
-        output_handle.write('Focal Region Codon Frequencies\t%s\n' % ', '.join([str(x) for x in foc_cod_freqs]))
-        output_handle.write('Background Genome Codon Frequencies\t%s\n' % ', '.join([str(x) for x in bkg_cod_freqs]))
-        output_handle.close()
-    else:
-        print('Empirical P-value\t%f' % emp_pval_freq)
-        print('Cosine Distance\t%f' % round(cosine_distance, 3))
-        print('Spearman\'s Rho\t%f' % round(rho, 3))
-        print('Codons\t%s' % ', '.join(cod_order))
-        print('Focal Region Codon Frequencies\t%s' % ', '.join([str(x) for x in foc_cod_freqs]))
-        print('Background Genome Codon Frequencies\t%s' % ', '.join([str(x) for x in bkg_cod_freqs]))
-    
-    if plot_outfile != None:           
-        plot_outfile = os.path.abspath(plot_outfile)
-
-        sns.set_theme(style='white')
-        p = sns.histplot(sim_cosine_distances, color='grey')
-        p.axvline(cosine_distance)
-        plt.xlabel('Simulated cosine distances')
-        #plt.xscale('log')
-        plt.savefig(plot_outfile, format='svg')
-
-    sys.exit(0)
-
+	"""
+	START WORKFLOW
+	"""
+	
+	if focal_genbank_files != None:
+		codoff.codoff_main_gbk(
+			full_genome_file=full_genome_file,
+			focal_genbank_files=focal_genbank_files,
+			outfile=outfile,
+			plot_outfile=plot_outfile,
+			verbose=True
+		)
+	elif focal_scaffold != None and focal_start_coord != None and focal_end_coord != None:
+		codoff.codoff_main_coords(
+			full_genome_file=full_genome_file,
+			focal_scaffold=focal_scaffold,
+			focal_start_coord=focal_start_coord,
+			focal_end_coord=focal_end_coord,
+			outfile=outfile,
+			plot_outfile=plot_outfile,
+			verbose=True
+		)
+	else:
+		sys.stderr.write('Error: Insuffient input provided!\n')
+		sys.exit(1)
+	
 if __name__ == '__main__':
-    main()
+	main()

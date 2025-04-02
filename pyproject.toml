@@ -1,8 +1,8 @@
 [project]
-dependencies = ['setuptools', 'scipy', 'biopython', 'scipy', 'seaborn', 'matplotlib', 'pyrodigal']
+dependencies = ['setuptools', 'scipy', 'biopython', 'scipy', 'seaborn', 'matplotlib', 'pyrodigal', 'tqdm']
 name = "codoff"
 authors = [{name="Rauf Salamzade", email="salamzader@gmail.com"}]
-version = "1.1.8"
+version = "1.2.0"
 readme = "README.md"
 description = "Program to measure the irregularity of the codon usage for a single genomic region (e.g. a BGC, phage, etc.) relative to the full genome."
 
@@ -11,7 +11,7 @@ requires = ['setuptools']
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
-script-files=["bin/codoff"]
+script-files=["bin/codoff", "bin/antismash_codoff"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

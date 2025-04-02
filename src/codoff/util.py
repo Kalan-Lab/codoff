@@ -83,7 +83,8 @@ def parseCDSCoord(str_gbk_loc):
 			return(all_coords, start, end, direction, is_multi_part)
 	except Exception as e:
 		sys.stderr.write("Issues with GenBank CDS processing.\n")
-		raise RuntimeError(traceback.format_exc())
+		sys.stderr.write(traceback.format_exc() + '\n')
+		sys.exit(1)
 
 def geneCallUsingPyrodigal(genome_fasta_file, focal_scaffold, focal_start_coord, focal_end_coord):
 	locus_tag_sequences = {}
@@ -116,7 +117,8 @@ def geneCallUsingPyrodigal(genome_fasta_file, focal_scaffold, focal_start_coord,
 					locus_tag_id += 1
 	except:
 		sys.stderr.write("Issues with pyrodigal gene calling.\n")
-		raise RuntimeError(traceback.format_exc())
+		sys.stderr.write(traceback.format_exc() + '\n')
+		sys.exit(1)
 	return([locus_tag_sequences, focal_lts])
 
 def checkIsGenBankWithCDS(gbk_file):
@@ -131,8 +133,9 @@ def checkIsGenBankWithCDS(gbk_file):
 		return(gbk_with_cds) 
 	except:
 		sys.stderr.write("Issues with attemping to parse suspected GenBank file %s" % gbk_file)
-		raise RuntimeError(traceback.format_exc())
-	
+		sys.stderr.write(traceback.format_exc() + '\n')
+		sys.exit(1)
+
 def confirmFasta(fasta_file):
 	try:
 		fasta_recs = 0
@@ -142,4 +145,5 @@ def confirmFasta(fasta_file):
 		return(fasta_recs > 0) 
 	except:
 		sys.stderr.write("Issues with attemping to parse suspected FASTA file %s" % fasta_file)
-		raise RuntimeError(traceback.format_exc())
+		sys.stderr.write(traceback.format_exc() + '\n')
+		sys.exit(1)

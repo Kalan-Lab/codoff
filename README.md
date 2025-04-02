@@ -2,6 +2,7 @@
 [![Bioconda](https://img.shields.io/conda/vn/bioconda/codoff?style=flat-square&maxAge=3600)](https://anaconda.org/bioconda/codoff)
 [![PyPI](https://img.shields.io/pypi/v/codoff.svg?style=flat-square&maxAge=3600)](https://pypi.python.org/pypi/codoff)
 [![Upload Python Package](https://github.com/Kalan-Lab/codoff/actions/workflows/python-publish.yml/badge.svg)](https://github.com/Kalan-Lab/codoff/actions/workflows/python-publish.yml)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.13139677.svg)](https://doi.org/10.5281/zenodo.13139677)
 
 **codoff**: A program to measure the irregularity of the codon usage for a focal genomic region (e.g. a BGC, phage, etc.) relative to the full genome. It was primarily designed to work off the output of antiSMASH biosynthetic gene cluster (BGC) predictions - but can be more broadly applied as well, with options allowing users to provide a genome in FASTA format and simply specify the coordinates of the focal region of interest. It computes an empirical P-value as to the significance of observing a codon usage profile for the focal region so discordant with what is observed for the larger genome-wide context.
 
@@ -90,7 +91,11 @@ To calculate an empirical P-value, we gather codons for each gene across the gen
 
  <!---![figure](https://github.com/Kalan-Lab/codoff/blob/main/codoff_empirical_pvalue_image.png?raw=true) --->
 
-## Usage 
+## Usage in Python
+
+Beginning in v1.2.0, codoff can also be used as a function in your Python code. Check out [this wiki page](https://github.com/Kalan-Lab/codoff/wiki/API-and-usage-of-main-functions-in-Python-programs) for info on how to do this and details on the API.
+
+## Commandline usage 
 
 ```
 usage: codoff [-h] -g FULL_GENOME [-s SCAFFOLD] [-a START_COORD] [-b END_COORD] [-f FOCAL_GENBANKS [FOCAL_GENBANKS ...]] [-o OUTFILE] [-p PLOT_OUTFILE] [-v]
@@ -98,48 +103,46 @@ usage: codoff [-h] -g FULL_GENOME [-s SCAFFOLD] [-a START_COORD] [-b END_COORD] 
 	Program: codoff
 	Author: Rauf Salamzade
 	Affiliation: Kalan Lab, UW Madison, Department of Medical Microbiology and Immunology
-		
-	This program compares the codon-usage distribution of a focal-region/BGC to the codon usage of 
-    the background genome. It will report the cosine distance and Spearman correlation between the 
-    two profiles, as well as an empirical P-value for whether the codon usage is siginficantly different
-    between the focal region and background genome. Only CDS features which are of length divisible 
-    by 3 will be considered. 
-                                     
-    Two modes of input are supported:
-                                     
-    1. (WORKS FOR BOTH EUKARYOTES & BACTERIA) Focal region and full-genome provided as GenBank files with 
-       CDS features (compatible with antiSMASH outputs). Multiple focal region GenBank files can be provided, 
-       e.g. consider a biosynthetic gene cluster split across multiple scaffolds due to assembly fragmentation. 
-                                                                         
-       Example command: 
-                                     
-       $ codoff -f Sw_LK413/NZ_JALXLO020000001.1.region001.gbk -g Sw_LK413/LK413.gbk
-                                     
-    2. (WORKS ONLY FOR BACTERIA) Full genome is provided as a FASTA or GenBank file. If CDS features are missing
-       gene calling is performed using pyrodigal. Afterwards, the focal region is determined through user
-       speciefied coordinates.
-    
-       Example command:
-                                     
-       $ codoff -s NZ_JALXLO020000001.1 -a 341425 -b 388343 -g Sw_LK413/LK413.fna 
- 
-    
+
+	This program compares the codon-usage distribution of a focal-region/BGC to the codon usage of
+	the background genome. It will report the cosine distance and Spearman correlation between the
+	two profiles, as well as an empirical P-value for whether the codon usage is siginficantly different
+	between the focal region and background genome. Only CDS features which are of length divisible
+	by 3 will be considered.
+
+	Two modes of input are supported:
+
+	1. (WORKS FOR BOTH EUKARYOTES & BACTERIA) Focal region and full-genome provided as GenBank files with
+	   CDS features (compatible with antiSMASH outputs). Multiple focal region GenBank files can be provided,
+	   e.g. consider a biosynthetic gene cluster split across multiple scaffolds due to assembly fragmentation.
+
+	   Example command:
+
+	   $ codoff -f Sw_LK413/NZ_JALXLO020000001.1.region001.gbk -g Sw_LK413/LK413.gbk
+
+	2. (WORKS ONLY FOR BACTERIA) Full genome is provided as a FASTA or GenBank file. If CDS features are missing
+	   gene calling is performed using pyrodigal. Afterwards, the focal region is determined through user
+	   speciefied coordinates.
+
+	   Example command:
+
+	   $ codoff -s NZ_JALXLO020000001.1 -a 341425 -b 388343 -g Sw_LK413/LK413.fna
 
 options:
   -h, --help            show this help message and exit
-  -g FULL_GENOME, --full_genome FULL_GENOME
-                        Path to annotated full-genome in GenBank or FASTA format for isolate's genome.
+  -g FULL_GENOME, --full-genome FULL_GENOME
+                        Path to a full-genome in GenBank or FASTA format. If GenBank file provided, CDS features are required.
   -s SCAFFOLD, --scaffold SCAFFOLD
                         Scaffold identifier for focal region.
-  -a START_COORD, --start_coord START_COORD
+  -a START_COORD, --start-coord START_COORD
                         Start coordinate for focal region.
-  -b END_COORD, --end_coord END_COORD
+  -b END_COORD, --end-coord END_COORD
                         End coordinate for focal region.
-  -f FOCAL_GENBANKS [FOCAL_GENBANKS ...], --focal_genbanks FOCAL_GENBANKS [FOCAL_GENBANKS ...]
+  -f FOCAL_GENBANKS [FOCAL_GENBANKS ...], --focal-genbanks FOCAL_GENBANKS [FOCAL_GENBANKS ...]
                         Path to focal region GenBank(s) for isolate. Locus tags must match with tags in full-genome GenBank.
   -o OUTFILE, --outfile OUTFILE
-                        Path to output file.
-  -p PLOT_OUTFILE, --plot_outfile PLOT_OUTFILE
+                        Path to output file [Default is standard output].
+  -p PLOT_OUTFILE, --plot-outfile PLOT_OUTFILE
                         Plot output file name (will be in SVG format). If not provided, no plot will be made.
   -v, --version         Print version and exist
 ```

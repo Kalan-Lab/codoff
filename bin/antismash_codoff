@@ -6,7 +6,6 @@ warnings.filterwarnings("ignore", category=DeprecationWarning)
 import os
 import sys
 import argparse
-import pkg_resources
 import multiprocessing
 import tqdm
 from codoff import codoff

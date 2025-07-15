@@ -141,7 +141,7 @@ def codoff_main_gbk(full_genome_file, focal_genbank_files, outfile=None, plot_ou
 			sys.exit(1)
 
 		ofgbk = None
-		if foc_gbk.endswith('.gz'):
+		if full_genome_file.endswith('.gz'):
 			ofgbk = gzip.open(full_genome_file, 'rt')
 		else:
 			ofgbk = open(full_genome_file)
@@ -311,7 +311,7 @@ def codoff_main_coords(full_genome_file, focal_scaffold, focal_start_coord, foca
 			total_cds_length = 0
 				
 			ofgbk = None
-			if foc_gbk.endswith('.gz'):
+			if full_genome_file.endswith('.gz'):
 				ofgbk = gzip.open(full_genome_file, 'rt')
 			else:
 				ofgbk = open(full_genome_file)

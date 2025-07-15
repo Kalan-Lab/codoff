@@ -10,6 +10,7 @@ from collections import defaultdict
 from scipy import stats, spatial
 from codoff import util
 from operator import itemgetter
+import gzip
 import numpy 
 import math
 import traceback
@@ -111,32 +112,12 @@ def codoff_main_gbk(full_genome_file, focal_genbank_files, outfile=None, plot_ou
 		# parse GenBank files of focal regions for locus_tags
 		focal_lts = set([])
 		for foc_gbk in focal_genbank_files:
-			with open(foc_gbk) as ogbk:
-				for rec in SeqIO.parse(ogbk, 'genbank'):
-					for feature in rec.features:
-						if not feature.type == 'CDS': continue
-						locus_tag = None
-						try:
-							locus_tag = feature.qualifiers.get('locus_tag')[0]
-						except:
-							try:
-								locus_tag = feature.qualifiers.get('gene')[0]
-							except:
-								locus_tag = feature.qualifiers.get('protein_id')[0]
-						assert(locus_tag != None)
-						focal_lts.add(locus_tag)
-
-		# parse nucleotide coding sequences from full-genome Genbank
-		locus_tag_sequences = {}
-		focal_cds_length = 0
-		total_cds_length = 0 
-		if not os.path.isfile(full_genome_file):
-			sys.stderr.write('Unable to find full-genome GenBank file %s.\n' % foc_gbk)
-			sys.exit(1)
-		
-		with open(full_genome_file) as ofgbk:
-			for rec in SeqIO.parse(ofgbk, 'genbank'):
-				full_sequence = str(rec.seq)
+			ogbk = None
+			if foc_gbk.endswith('.gz'):
+				ogbk = gzip.open(foc_gbk, 'rt')
+			else:
+				ogbk = open(foc_gbk)
+			for rec in SeqIO.parse(ogbk, 'genbank'):
 				for feature in rec.features:
 					if not feature.type == 'CDS': continue
 					locus_tag = None
@@ -148,39 +129,69 @@ def codoff_main_gbk(full_genome_file, focal_genbank_files, outfile=None, plot_ou
 						except:
 							locus_tag = feature.qualifiers.get('protein_id')[0]
 					assert(locus_tag != None)
-					all_coords, start, end, direction, is_multi_part = util.parseCDSCoord(str(feature.location))
-					if end >= len(full_sequence): end = len(full_sequence)
-					nucl_seq = ''
-					for sc, ec, dc in sorted(all_coords, key=itemgetter(0), reverse=False):
-						if ec >= len(full_sequence):
-							nucl_seq += full_sequence[sc - 1:]
-						else:
-							nucl_seq += full_sequence[sc - 1:ec]
-
-					if direction == '-':
-						nucl_seq = str(Seq(nucl_seq).reverse_complement())
-					locus_tag_sequences[locus_tag] = nucl_seq
-
-					if len(str(nucl_seq))%3 == 0:
-						if locus_tag in focal_lts:
-							focal_cds_length += len(nucl_seq)
-						total_cds_length += len(nucl_seq)
-
-			if total_cds_length == 0:
-				if verbose:
-					sys.stderr.write('Error: The genome appears to have no CDS features. Please check the input.\n')
-				sys.exit(1)
+					focal_lts.add(locus_tag)
+			ogbk.close()
 			
-			if focal_cds_length == 0:
-				if verbose:
-					sys.stderr.write('Error: The focal region appears to have no CDS features. This might be because locus_tags in the focal region(s) GenBank file do not match locus_tags in the full genome GenBank file. Please check the input.\n')
-				sys.exit(1)
-	
-			size_comparison = focal_cds_length/total_cds_length
-			if size_comparison >= 0.05:
-				sys.stderr.write('Error: The size of the focal region is >5%% of the full genome. This is not be appropriate for codoff analysis.\n')
-				sys.stderr.write('Focal region(s): %s\n' % str(focal_genbank_files))
-				sys.exit(1)
+		# parse nucleotide coding sequences from full-genome Genbank
+		locus_tag_sequences = {}
+		focal_cds_length = 0
+		total_cds_length = 0 
+		if not os.path.isfile(full_genome_file):
+			sys.stderr.write('Unable to find full-genome GenBank file %s.\n' % foc_gbk)
+			sys.exit(1)
+
+		ofgbk = None
+		if foc_gbk.endswith('.gz'):
+			ofgbk = gzip.open(full_genome_file, 'rt')
+		else:
+			ofgbk = open(full_genome_file)
+		for rec in SeqIO.parse(ofgbk, 'genbank'):
+			full_sequence = str(rec.seq)
+			for feature in rec.features:
+				if not feature.type == 'CDS': continue
+				locus_tag = None
+				try:
+					locus_tag = feature.qualifiers.get('locus_tag')[0]
+				except:
+					try:
+						locus_tag = feature.qualifiers.get('gene')[0]
+					except:
+						locus_tag = feature.qualifiers.get('protein_id')[0]
+				assert(locus_tag != None)
+				all_coords, start, end, direction, is_multi_part = util.parseCDSCoord(str(feature.location))
+				if end >= len(full_sequence): end = len(full_sequence)
+				nucl_seq = ''
+				for sc, ec, dc in sorted(all_coords, key=itemgetter(0), reverse=False):
+					if ec >= len(full_sequence):
+						nucl_seq += full_sequence[sc - 1:]
+					else:
+						nucl_seq += full_sequence[sc - 1:ec]
+
+				if direction == '-':
+					nucl_seq = str(Seq(nucl_seq).reverse_complement())
+				locus_tag_sequences[locus_tag] = nucl_seq
+
+				if len(str(nucl_seq))%3 == 0:
+					if locus_tag in focal_lts:
+						focal_cds_length += len(nucl_seq)
+					total_cds_length += len(nucl_seq)
+		ofgbk.close()
+		
+		if total_cds_length == 0:
+			if verbose:
+				sys.stderr.write('Error: The genome appears to have no CDS features. Please check the input.\n')
+			sys.exit(1)
+		
+		if focal_cds_length == 0:
+			if verbose:
+				sys.stderr.write('Error: The focal region appears to have no CDS features. This might be because locus_tags in the focal region(s) GenBank file do not match locus_tags in the full genome GenBank file. Please check the input.\n')
+			sys.exit(1)
+
+		size_comparison = focal_cds_length/total_cds_length
+		if size_comparison >= 0.05:
+			sys.stderr.write('Error: The size of the focal region is >5%% of the full genome. This is not be appropriate for codoff analysis.\n')
+			sys.stderr.write('Focal region(s): %s\n' % str(focal_genbank_files))
+			sys.exit(1)
 
 		# get codon frequencies for CDS in BGC and background genome
 		for locus_tag in locus_tag_sequences:
@@ -298,40 +309,46 @@ def codoff_main_coords(full_genome_file, focal_scaffold, focal_start_coord, foca
 			focal_lts = set([])
 			focal_cds_length = 0
 			total_cds_length = 0
-			with open(full_genome_file) as ofgbk:
-				for rec in SeqIO.parse(ofgbk, 'genbank'):
-					full_sequence = str(rec.seq)
-					for feature in rec.features:
-						if not feature.type == 'CDS': continue
-						locus_tag = None
+				
+			ofgbk = None
+			if foc_gbk.endswith('.gz'):
+				ofgbk = gzip.open(full_genome_file, 'rt')
+			else:
+				ofgbk = open(full_genome_file)
+			for rec in SeqIO.parse(ofgbk, 'genbank'):
+				full_sequence = str(rec.seq)
+				for feature in rec.features:
+					if not feature.type == 'CDS': continue
+					locus_tag = None
+					try:
+						locus_tag = feature.qualifiers.get('locus_tag')[0]
+					except:
 						try:
-							locus_tag = feature.qualifiers.get('locus_tag')[0]
+							locus_tag = feature.qualifiers.get('gene')[0]
 						except:
-							try:
-								locus_tag = feature.qualifiers.get('gene')[0]
-							except:
-								locus_tag = feature.qualifiers.get('protein_id')[0]
-						assert(locus_tag != None)
-						all_coords, start, end, direction, is_multi_part = util.parseCDSCoord(str(feature.location))
-						if end >= len(full_sequence): end = len(full_sequence)
-						nucl_seq = ''
-						for sc, ec, dc in sorted(all_coords, key=itemgetter(0), reverse=False):
-							if ec >= len(full_sequence):
-								nucl_seq += full_sequence[sc - 1:]
-							else:
-								nucl_seq += full_sequence[sc - 1:ec]
+							locus_tag = feature.qualifiers.get('protein_id')[0]
+					assert(locus_tag != None)
+					all_coords, start, end, direction, is_multi_part = util.parseCDSCoord(str(feature.location))
+					if end >= len(full_sequence): end = len(full_sequence)
+					nucl_seq = ''
+					for sc, ec, dc in sorted(all_coords, key=itemgetter(0), reverse=False):
+						if ec >= len(full_sequence):
+							nucl_seq += full_sequence[sc - 1:]
+						else:
+							nucl_seq += full_sequence[sc - 1:ec]
 
-						if direction == '-':
-							nucl_seq = str(Seq(nucl_seq).reverse_complement())
-						locus_tag_sequences[locus_tag] = nucl_seq
-						if rec.id == focal_scaffold and start >= focal_start_coord and end <= focal_end_coord:
-							focal_lts.add(locus_tag)
+					if direction == '-':
+						nucl_seq = str(Seq(nucl_seq).reverse_complement())
+					locus_tag_sequences[locus_tag] = nucl_seq
+					if rec.id == focal_scaffold and start >= focal_start_coord and end <= focal_end_coord:
+						focal_lts.add(locus_tag)
 
-						if len(str(nucl_seq))%3 == 0:
-							if locus_tag in focal_lts:
-								focal_cds_length += len(nucl_seq)
-							total_cds_length += len(nucl_seq)
-
+					if len(str(nucl_seq))%3 == 0:
+						if locus_tag in focal_lts:
+							focal_cds_length += len(nucl_seq)
+						total_cds_length += len(nucl_seq)
+			ofgbk.close()
+			
 			if total_cds_length == 0:
 				sys.stderr.write('Error: The genome appears to have no CDS features. Please check the input.\n')
 				sys.exit(1)

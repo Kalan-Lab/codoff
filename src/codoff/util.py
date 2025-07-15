@@ -3,6 +3,7 @@ import sys
 import traceback
 from Bio import SeqIO
 from Bio.Seq import Seq
+import gzip
 import pyrodigal
 
 def printProgressBar (iteration, total, prefix = '', suffix = '', decimals = 1, length = 100, fill = '█', printEnd = "\r"):

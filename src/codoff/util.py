@@ -124,12 +124,19 @@ def geneCallUsingPyrodigal(genome_fasta_file, focal_scaffold, focal_start_coord,
 def checkIsGenBankWithCDS(gbk_file):
 	try:
 		gbk_with_cds = False
-		with open(gbk_file) as ogf:
-			for rec in SeqIO.parse(ogf, 'genbank'):
-				for feat in rec.features:
-					if feat.type == 'CDS':
-						gbk_with_cds = True
-						break
+
+		ogf = None
+		if gbk_file.endswith('.gz'):
+			ogf = gzip.open(gbk_file, 'rt')
+		else:
+			ogf = open(gbk_file)
+		for rec in SeqIO.parse(ogf, 'genbank'):
+			for feat in rec.features:
+				if feat.type == 'CDS':
+					gbk_with_cds = True
+					break
+		ogf.close()
+		
 		return(gbk_with_cds) 
 	except:
 		sys.stderr.write("Issues with attemping to parse suspected GenBank file %s" % gbk_file)

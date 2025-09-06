@@ -208,6 +208,7 @@ python3 -m pytest tests/ -v
 
 # Check code style
 python3 -m flake8 src/codoff/ --max-line-length=100 --ignore=E501,W503
+```
 
 > [!NOTE] 
 > F824 warnings about global `_codon_extraction_cache` and `_codon_counts_cache` are false positives - these variables are actively used for caching functionality throughout the codebase. These warnings can be safely ignored.

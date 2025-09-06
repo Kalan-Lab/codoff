@@ -116,6 +116,247 @@ def _clear_caches() -> None:
     _codon_counts_cache.clear()
 
 
+def preprocess_genome(
+    full_genome_file: str,
+    verbose: bool = True
+) -> Dict[str, Any]:
+    """
+    Pre-process genome to extract all gene sequences and metadata for efficient BGC analysis.
+
+    This function extracts all CDS features from the genome and prepares the data
+    needed for multiple BGC analyses, avoiding redundant processing.
+
+    Args:
+        full_genome_file: Path to the full genome file in GenBank format
+        verbose: Whether to print progress messages to stderr
+
+    Returns:
+        Dictionary containing pre-processed genome data with keys:
+        - 'locus_tag_sequences': Dict mapping locus_tag to DNA sequence
+        - 'all_codon_counts': Dict mapping codon to count across all genes
+        - 'all_cods': Set of all codons found in the genome
+        - 'total_cds_length': Total length of all CDS sequences
+        - 'codon_order': List of codons in consistent order
+    """
+
+    if verbose:
+        sys.stderr.write("Pre-processing genome: %s\n" % full_genome_file)
+
+    # Validate input
+    try:
+        assert (check_data_type(full_genome_file, str))
+        assert (os.path.isfile(full_genome_file))
+        assert (util.check_is_genbank_with_cds(full_genome_file))
+    except Exception:
+        sys.stderr.write('The full genome file must be a string to a file.\n')
+        sys.stderr.write(traceback.format_exc() + '\n')
+        sys.exit(1)
+
+    locus_tag_sequences = {}
+    all_codon_counts = defaultdict(int)
+    all_cods = set([])
+    total_cds_length = 0
+
+    try:
+        ofgbk = None
+        if full_genome_file.endswith('.gz'):
+            ofgbk = gzip.open(full_genome_file, 'rt')
+        else:
+            ofgbk = open(full_genome_file)
+
+        for rec in SeqIO.parse(ofgbk, 'genbank'):
+            full_sequence = str(rec.seq)
+            for feature in rec.features:
+                if not feature.type == 'CDS':
+                    continue
+                locus_tag = None
+                try:
+                    locus_tag = feature.qualifiers.get('locus_tag')[0]
+                except Exception:
+                    try:
+                        locus_tag = feature.qualifiers.get('gene')[0]
+                    except Exception:
+                        locus_tag = feature.qualifiers.get('protein_id')[0]
+                assert (locus_tag is not None)
+
+                all_coords, start, end, direction, is_multi_part = util.parse_cds_coord(str(feature.location))
+                if end >= len(full_sequence):
+                    end = len(full_sequence)
+                nucl_seq = ''
+                for sc, ec, dc in sorted(all_coords, key=itemgetter(0), reverse=False):
+                    if ec >= len(full_sequence):
+                        nucl_seq += full_sequence[sc - 1:]
+                    else:
+                        nucl_seq += full_sequence[sc - 1:ec]
+                if len(str(nucl_seq)) % 3 == 0:
+                    locus_tag_sequences[locus_tag] = nucl_seq
+                    total_cds_length += len(nucl_seq)
+
+                    # Extract codons and count them
+                    codons = _get_cached_codons(nucl_seq, locus_tag)
+                    for codon in codons:
+                        all_codon_counts[codon] += 1
+                        all_cods.add(codon)
+
+        ofgbk.close()
+
+        # Create consistent codon order
+        codon_order = sorted(list(all_cods))
+
+        if verbose:
+            sys.stderr.write("Pre-processed %d genes from genome\n" % len(locus_tag_sequences))
+            sys.stderr.write("Total CDS length: %d bp\n" % total_cds_length)
+            sys.stderr.write("Found %d unique codons\n" % len(all_cods))
+
+        return {
+            'locus_tag_sequences': locus_tag_sequences,
+            'all_codon_counts': dict(all_codon_counts),
+            'all_cods': all_cods,
+            'total_cds_length': total_cds_length,
+            'codon_order': codon_order
+        }
+
+    except Exception:
+        sys.stderr.write('Error pre-processing genome file.\n')
+        sys.stderr.write(traceback.format_exc() + '\n')
+        sys.exit(1)
+
+
+def codoff_main_gbk_with_preprocessed(
+    preprocessed_genome: Dict[str, Any],
+    focal_genbank_files: List[str],
+    outfile: Optional[str] = None,
+    plot_outfile: Optional[str] = None,
+    verbose: bool = True,
+    threads: int = 1,
+    random_seed: Optional[int] = None
+) -> Optional[Dict[str, Any]]:
+    """
+    Analyze codon usage differences using pre-processed genome data.
+
+    This function is optimized for multiple BGC analyses by using pre-processed
+    genome data to avoid redundant processing.
+
+    Args:
+        preprocessed_genome: Pre-processed genome data from preprocess_genome()
+        focal_genbank_files: List of paths to the GenBank files for the focal region
+        outfile: Path to the output file. If None, output will be printed to stdout
+        plot_outfile: Path to the plot output file. If None, no plot will be made
+        verbose: Whether to print progress messages to stderr. Default is True
+        threads: Number of threads to use for parallel processing. Default is 1
+        random_seed: Random seed for reproducible results. If None, results will be non-deterministic
+
+    Returns:
+        Dictionary containing analysis results with keys: 'emp_pval_freq', 'cosine_distance',
+        'rho', 'codon_order', 'focal_region_codons', 'background_genome_codons', or None if error
+    """
+
+    # Extract pre-processed data
+    locus_tag_sequences = preprocessed_genome['locus_tag_sequences']
+    all_cods = preprocessed_genome['all_cods']
+    total_cds_length = preprocessed_genome['total_cds_length']
+    codon_order = preprocessed_genome['codon_order']
+
+    # Validate focal GenBank files
+    try:
+        assert (check_data_type(focal_genbank_files, list))
+        for reg_gbk in focal_genbank_files:
+            assert (check_data_type(reg_gbk, str))
+            assert (os.path.isfile(reg_gbk))
+            assert (util.check_is_genbank_with_cds(reg_gbk))
+    except Exception:
+        sys.stderr.write('The focal region GenBank files must be a list of string paths to existing files.\n')
+        sys.stderr.write(traceback.format_exc() + '\n')
+        sys.exit(1)
+
+    # Clear caches at the start of analysis
+    _clear_caches()
+
+    cod_freq_dict_focal = defaultdict(int)
+    cod_freq_dict_background = defaultdict(int)
+    all_codon_counts_bg = defaultdict(int)
+    gene_codons = defaultdict(list)
+    gene_list = []
+    foc_codon_count = 0
+
+    try:
+        # Parse GenBank files of focal regions for locus_tags
+        focal_lts = set([])
+        for foc_gbk in focal_genbank_files:
+            ogbk = None
+            if foc_gbk.endswith('.gz'):
+                ogbk = gzip.open(foc_gbk, 'rt')
+            else:
+                ogbk = open(foc_gbk)
+            for rec in SeqIO.parse(ogbk, 'genbank'):
+                for feature in rec.features:
+                    if not feature.type == 'CDS':
+                        continue
+                    locus_tag = None
+                    try:
+                        locus_tag = feature.qualifiers.get('locus_tag')[0]
+                    except Exception:
+                        try:
+                            locus_tag = feature.qualifiers.get('gene')[0]
+                        except Exception:
+                            locus_tag = feature.qualifiers.get('protein_id')[0]
+                    assert (locus_tag is not None)
+                    focal_lts.add(locus_tag)
+            ogbk.close()
+
+        # Calculate focal region codon frequencies using pre-processed data
+        focal_cds_length = 0
+        for locus_tag in focal_lts:
+            if locus_tag in locus_tag_sequences:
+                seq = locus_tag_sequences[locus_tag]
+                if len(str(seq)) % 3 == 0:
+                    focal_cds_length += len(str(seq))
+                    codons = _get_cached_codons(seq, locus_tag)
+                    for codon in codons:
+                        cod_freq_dict_focal[codon] += 1
+                        all_cods.add(codon)
+                    foc_codon_count += len(codons)
+                    gene_codons[locus_tag] = codons
+                    gene_list.append(locus_tag)
+
+        # Calculate background genome codon frequencies using pre-processed data
+        for locus_tag, seq in locus_tag_sequences.items():
+            if locus_tag not in focal_lts:
+                if len(str(seq)) % 3 == 0:
+                    codons = _get_cached_codons(seq, locus_tag)
+                    for codon in codons:
+                        cod_freq_dict_background[codon] += 1
+                        all_codon_counts_bg[codon] += 1
+
+        # Check if focal region is too large
+        size_comparison = focal_cds_length / total_cds_length
+        if size_comparison >= 0.05:
+            sys.stderr.write('Error: The size of the focal region is >5%% of the full genome. This is not be appropriate for codoff analysis.\n')
+            sys.exit(1)
+
+        if foc_codon_count == 0:
+            sys.stderr.write('Error: No valid coding sequences found in focal region.\n')
+            sys.exit(1)
+
+        if verbose:
+            sys.stderr.write('Focal region codon count: %d\n' % foc_codon_count)
+            sys.stderr.write('Background genome codon count: %d\n' % sum(all_codon_counts_bg.values()))
+            sys.stderr.write('Focal region CDS length: %d bp\n' % focal_cds_length)
+            sys.stderr.write('Total CDS length: %d bp\n' % total_cds_length)
+
+        # Call the main statistical analysis function
+        return _stat_calc_and_simulation(
+            cod_freq_dict_focal, cod_freq_dict_background, all_cods, codon_order,
+            gene_codons, gene_list, foc_codon_count, outfile, plot_outfile,
+            threads, verbose, random_seed
+        )
+
+    except Exception:
+        sys.stderr.write('Error in codoff analysis with pre-processed data.\n')
+        sys.stderr.write(traceback.format_exc() + '\n')
+        sys.exit(1)
+
+
 def _get_cache_stats() -> Dict[str, int]:
     """Get cache statistics for monitoring performance."""
     global _codon_extraction_cache, _codon_counts_cache

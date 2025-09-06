@@ -40,8 +40,9 @@ def create_parser():
 
 def antismash_bgc_region_process(inputs):
 	try:
-		bgc_gbk, genome_gbk, bgc_plotfile, bgc_outfile, threads = inputs
-		codoff.codoff_main_gbk(full_genome_file=genome_gbk,
+		bgc_gbk, preprocessed_genome, bgc_plotfile, bgc_outfile, threads = inputs
+		codoff.codoff_main_gbk_with_preprocessed(
+			preprocessed_genome=preprocessed_genome,
 			focal_genbank_files=[bgc_gbk],
 			outfile=bgc_outfile,
 			plot_outfile=bgc_plotfile,
@@ -88,7 +89,6 @@ def main():
 	"""
 
 	# Process antiSMASH results directory
-
 	genome_gbk = None
 	bgc_gbks = []
 	for f in os.listdir(antismash_dir):
@@ -106,17 +106,23 @@ def main():
 		sys.stderr.write('Unalbe to find any BGC GenBank files in antiSMASH results directory.\n')
 		sys.exit(1)
 	
+	# Pre-process the genome once for all BGC analyses
+	sys.stderr.write("Pre-processing genome for efficient BGC analysis...\n")
+	preprocessed_genome = codoff.preprocess_genome(genome_gbk, verbose=True)
+	
+	# Prepare inputs for each BGC analysis
 	codoff_inputs = []
 	for bgc_gbk in bgc_gbks:
 		bgc_gbk_name = bgc_gbk.split('/')[-1].split('.gbk')[0]
 		bgc_outfile = output_dir + bgc_gbk_name + '.txt'
 		bgc_plotfile = output_dir + bgc_gbk_name + '.svg'
-		ci = [bgc_gbk, genome_gbk, bgc_plotfile, bgc_outfile, threads]
+		ci = [bgc_gbk, preprocessed_genome, bgc_plotfile, bgc_outfile, threads]
 		codoff_inputs.append(ci)
 
 	msg = "Running codoff on %d BGC regions in %s" % (len(codoff_inputs), antismash_dir) 
 	sys.stdout.write(msg + '\n')
 
+	# Use multiprocessing with pre-processed genome data
 	p = multiprocessing.Pool(processes=processors)
 	for _ in tqdm.tqdm(p.imap_unordered(antismash_bgc_region_process, codoff_inputs), total=len(codoff_inputs)):
 		pass

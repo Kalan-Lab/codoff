@@ -211,7 +211,7 @@ def preprocess_genome(
         return {
             'locus_tag_sequences': locus_tag_sequences,
             'all_codon_counts': dict(all_codon_counts),
-            'all_cods': all_cods,
+            'all_cods': list(all_cods),
             'total_cds_length': total_cds_length,
             'codon_order': codon_order
         }
@@ -346,7 +346,7 @@ def codoff_main_gbk_with_preprocessed(
 
         # Call the main statistical analysis function
         return _stat_calc_and_simulation(
-            cod_freq_dict_focal, cod_freq_dict_background, all_cods, codon_order,
+            set(all_cods), cod_freq_dict_focal, cod_freq_dict_background, codon_order,
             gene_codons, gene_list, foc_codon_count, outfile, plot_outfile,
             threads, verbose, random_seed
         )

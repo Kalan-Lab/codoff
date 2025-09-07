@@ -4,7 +4,6 @@ import gzip
 import sys
 import traceback
 from typing import Dict, List, Set, Tuple
-
 import pyrodigal
 from Bio import SeqIO
 from Bio.Seq import Seq

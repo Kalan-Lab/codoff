@@ -27,11 +27,14 @@ class TestThreadingFunctions:
             np.array([3, 1, 2, 0, 1, 0], dtype=np.int32),
             np.array([2, 2, 3, 1, 0, 0], dtype=np.int32)
         ]
+        gene_list = ['gene1', 'gene2', 'gene3']
+        gene_codons = {'gene1': ['ATG', 'GCC', 'GAA'], 'gene2': ['ATG', 'GCC'], 'gene3': ['GAA', 'TAA']}
+        foc_codon_count = 26
         
         # Run worker function
         emp_count, sim_distances = _codoff_worker_function(
             cpu_simulations, region_freqs_list, codon_order, 
-            observed_cosine_distance, all_cds_codon_count_arrays, random_seed=42
+            observed_cosine_distance, all_cds_codon_count_arrays, gene_list, gene_codons, foc_codon_count, random_seed=42
         )
         
         # Check results
@@ -46,22 +49,31 @@ class TestThreadingFunctions:
         codon_order = ['ATG', 'GCC', 'GAA']
         
         # Test with zero simulations
+        gene_list = ['gene1']
+        gene_codons = {'gene1': ['ATG', 'GCC', 'GAA']}
+        foc_codon_count = 3
         emp_count, sim_distances = _codoff_worker_function(
-            0, [1, 2, 3], codon_order, 0.5, [np.array([1, 1, 1])], random_seed=42
+            0, [1, 2, 3], codon_order, 0.5, [np.array([1, 1, 1])], gene_list, gene_codons, foc_codon_count, random_seed=42
         )
         assert emp_count == 0
         assert len(sim_distances) == 0
         
         # Test with empty codon count arrays
+        gene_list = []
+        gene_codons = {}
+        foc_codon_count = 0
         emp_count, sim_distances = _codoff_worker_function(
-            10, [1, 2, 3], codon_order, 0.5, [], random_seed=42
+            10, [1, 2, 3], codon_order, 0.5, [], gene_list, gene_codons, foc_codon_count, random_seed=42
         )
         assert emp_count == 0
         assert len(sim_distances) == 0
         
         # Test with empty codon order
+        gene_list = ['gene1']
+        gene_codons = {'gene1': ['ATG', 'GCC', 'GAA']}
+        foc_codon_count = 3
         emp_count, sim_distances = _codoff_worker_function(
-            10, [1, 2, 3], [], 0.5, [np.array([1, 1, 1])], random_seed=42
+            10, [1, 2, 3], [], 0.5, [np.array([1, 1, 1])], gene_list, gene_codons, foc_codon_count, random_seed=42
         )
         assert emp_count == 0
         assert len(sim_distances) == 0
@@ -72,8 +84,11 @@ class TestThreadingFunctions:
         all_cds_codon_count_arrays = [np.array([1, 1, 1], dtype=np.int32)]
         
         # Test with empty codon count arrays (which should return 0, 0)
+        gene_list = []
+        gene_codons = {}
+        foc_codon_count = 0
         emp_count, sim_distances = _codoff_worker_function(
-            10, [1, 2, 3], codon_order, 0.5, [], random_seed=42
+            10, [1, 2, 3], codon_order, 0.5, [], gene_list, gene_codons, foc_codon_count, random_seed=42
         )
         
         assert emp_count == 0
@@ -247,8 +262,11 @@ class TestThreadingFunctions:
         all_cds_codon_count_arrays = [np.array([1, 1, 1], dtype=np.int32)]
         
         # Test with invalid data that should cause exceptions
+        gene_list = ['gene1']
+        gene_codons = {'gene1': ['ATG', 'GCC', 'GAA']}
+        foc_codon_count = 3
         emp_count, sim_distances = _codoff_worker_function(
-            10, [1, 2, 3], codon_order, 0.5, all_cds_codon_count_arrays, random_seed=42
+            10, [1, 2, 3], codon_order, 0.5, all_cds_codon_count_arrays, gene_list, gene_codons, foc_codon_count, random_seed=42
         )
         
         # Should still return valid results

@@ -6,8 +6,6 @@ warnings.filterwarnings("ignore", category=DeprecationWarning)
 import os
 import sys
 import argparse
-import multiprocessing
-import tqdm
 from codoff import codoff
 import importlib.metadata
 import traceback
@@ -22,18 +20,18 @@ except importlib.metadata.PackageNotFoundError:
 def create_parser():
 	""" Parse arguments """
 	parser = argparse.ArgumentParser(description="""
-	Program: codoff
+	Program: antismash_codoff
 	Author: Rauf Salamzade
 	Affiliation: Kalan Lab, UW Madison, Department of Medical Microbiology and Immunology
 		
-	Simple wrapper of codoff for analysis of antiSMASH results for a single genome. 
+	Simple wrapper of codoff for analysis of antiSMASH results for a single genome.
+	Processes BGC regions sequentially with threading for each analysis.
 	""", formatter_class=argparse.RawTextHelpFormatter)
 
 	parser.add_argument('-a', '--antismash-dir', help="Path to annotated full-genome in GenBank or FASTA format for isolate's genome.", required=True)
 	parser.add_argument('-o', '--output-dir', help="Result direcotry.", required=True)
 	parser.add_argument('-v', '--version', action='store_true', help="Print version and exist", required=False, default=False)
-	parser.add_argument('-p', '--processors', type=int, help="Number of codoff jobs to run at once [Default is 1].", required=False, default=1)
-	parser.add_argument('-t', '--threads', type=int, help="Number of threads per codoff job [Default is 1].", required=False, default=1)
+	parser.add_argument('-t', '--threads', type=int, help="Number of threads for parallel processing [Default is 1].", required=False, default=1)
 
 	args = parser.parse_args()
 	return args
@@ -69,7 +67,6 @@ def main():
 
 	antismash_dir = os.path.abspath(myargs.antismash_dir) + '/'
 	output_dir = os.path.abspath(myargs.output_dir) + '/'
-	processors = myargs.processors
 	threads = myargs.threads
 
 	try:
@@ -110,23 +107,21 @@ def main():
 	sys.stderr.write("Pre-processing genome for efficient BGC analysis...\n")
 	preprocessed_genome = codoff.preprocess_genome(genome_gbk, verbose=True)
 	
-	# Prepare inputs for each BGC analysis
-	codoff_inputs = []
-	for bgc_gbk in bgc_gbks:
+	msg = "Running codoff on %d BGC regions in %s" % (len(bgc_gbks), antismash_dir) 
+	sys.stdout.write(msg + '\n')
+
+	# Process each BGC region sequentially with threading for each analysis
+	total_bgcs = len(bgc_gbks)
+	for i, bgc_gbk in enumerate(bgc_gbks):
 		bgc_gbk_name = bgc_gbk.split('/')[-1].split('.gbk')[0]
 		bgc_outfile = output_dir + bgc_gbk_name + '.txt'
 		bgc_plotfile = output_dir + bgc_gbk_name + '.svg'
 		ci = [bgc_gbk, preprocessed_genome, bgc_plotfile, bgc_outfile, threads]
-		codoff_inputs.append(ci)
-
-	msg = "Running codoff on %d BGC regions in %s" % (len(codoff_inputs), antismash_dir) 
-	sys.stdout.write(msg + '\n')
-
-	# Use multiprocessing with pre-processed genome data
-	p = multiprocessing.Pool(processes=processors)
-	for _ in tqdm.tqdm(p.imap_unordered(antismash_bgc_region_process, codoff_inputs), total=len(codoff_inputs)):
-		pass
-	p.close()
+		antismash_bgc_region_process(ci)
 		
+		# Show progress using the util progress bar function
+		codoff.util.print_progress_bar(i + 1, total_bgcs, prefix='Processing BGC regions:', suffix='Complete', length=50)
+
+
 if __name__ == '__main__':
 	main()

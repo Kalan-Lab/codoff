@@ -9,9 +9,9 @@ import traceback
 import warnings
 from collections import defaultdict, Counter
 from multiprocessing import Pool
+import multiprocessing
 from operator import itemgetter
 from typing import Any, Dict, List, Optional, Set, Tuple
-
 import matplotlib.pyplot as plt
 import numpy as np
 import seaborn as sns
@@ -116,6 +116,16 @@ def _clear_caches() -> None:
     _codon_counts_cache.clear()
 
 
+def _get_cache_stats() -> Dict[str, int]:
+    """Get cache statistics for monitoring performance."""
+    global _codon_extraction_cache, _codon_counts_cache
+    return {
+        'codon_extraction_cache_size': len(_codon_extraction_cache),
+        'codon_counts_cache_size': len(_codon_counts_cache),
+        'total_cached_sequences': len(_codon_extraction_cache)
+    }
+
+
 def preprocess_genome(
     full_genome_file: str,
     verbose: bool = True
@@ -134,41 +144,47 @@ def preprocess_genome(
         Dictionary containing pre-processed genome data with keys:
         - 'locus_tag_sequences': Dict mapping locus_tag to DNA sequence
         - 'all_codon_counts': Dict mapping codon to count across all genes
-        - 'all_cods': Set of all codons found in the genome
+        - 'all_cods': List of all codons found in the genome
         - 'total_cds_length': Total length of all CDS sequences
         - 'codon_order': List of codons in consistent order
     """
-
     if verbose:
         sys.stderr.write("Pre-processing genome: %s\n" % full_genome_file)
 
     # Validate input
     try:
-        assert (check_data_type(full_genome_file, str))
+        assert (isinstance(full_genome_file, str))
         assert (os.path.isfile(full_genome_file))
         assert (util.check_is_genbank_with_cds(full_genome_file))
     except Exception:
-        sys.stderr.write('The full genome file must be a string to a file.\n')
+        sys.stderr.write('The full genome file must be a string path to an existing GenBank file with CDS features.\n')
         sys.stderr.write(traceback.format_exc() + '\n')
         sys.exit(1)
 
+    # Clear caches at the start of preprocessing
+    _clear_caches()
+
+    # Initialize data structures
     locus_tag_sequences = {}
     all_codon_counts = defaultdict(int)
-    all_cods = set([])
+    all_cods = set()
     total_cds_length = 0
 
     try:
-        ofgbk = None
+        # Parse the full genome file
+        ogbk = None
         if full_genome_file.endswith('.gz'):
-            ofgbk = gzip.open(full_genome_file, 'rt')
+            ogbk = gzip.open(full_genome_file, 'rt')
         else:
-            ofgbk = open(full_genome_file)
+            ogbk = open(full_genome_file)
 
-        for rec in SeqIO.parse(ofgbk, 'genbank'):
+        for rec in SeqIO.parse(ogbk, 'genbank'):
             full_sequence = str(rec.seq)
+
             for feature in rec.features:
                 if not feature.type == 'CDS':
                     continue
+
                 locus_tag = None
                 try:
                     locus_tag = feature.qualifiers.get('locus_tag')[0]
@@ -177,47 +193,55 @@ def preprocess_genome(
                         locus_tag = feature.qualifiers.get('gene')[0]
                     except Exception:
                         locus_tag = feature.qualifiers.get('protein_id')[0]
-                assert (locus_tag is not None)
 
+                if locus_tag is None:
+                    continue
+
+                # Extract CDS sequence
                 all_coords, start, end, direction, is_multi_part = util.parse_cds_coord(str(feature.location))
                 if end >= len(full_sequence):
                     end = len(full_sequence)
+
                 nucl_seq = ''
                 for sc, ec, dc in sorted(all_coords, key=itemgetter(0), reverse=False):
                     if ec >= len(full_sequence):
                         nucl_seq += full_sequence[sc - 1:]
                     else:
                         nucl_seq += full_sequence[sc - 1:ec]
+
+                if direction == '-':
+                    nucl_seq = str(Seq(nucl_seq).reverse_complement())
+
                 if len(str(nucl_seq)) % 3 == 0:
                     locus_tag_sequences[locus_tag] = nucl_seq
-                    total_cds_length += len(nucl_seq)
+                    total_cds_length += len(str(nucl_seq))
 
-                    # Extract codons and count them
+                    # Extract and count codons
                     codons = _get_cached_codons(nucl_seq, locus_tag)
                     for codon in codons:
                         all_codon_counts[codon] += 1
                         all_cods.add(codon)
 
-        ofgbk.close()
+        ogbk.close()
 
         # Create consistent codon order
         codon_order = sorted(list(all_cods))
 
         if verbose:
             sys.stderr.write("Pre-processed %d genes from genome\n" % len(locus_tag_sequences))
-            sys.stderr.write("Total CDS length: %d bp\n" % total_cds_length)
+            sys.stderr.write("Total codon count: %d\n" % (total_cds_length / 3))
             sys.stderr.write("Found %d unique codons\n" % len(all_cods))
 
         return {
             'locus_tag_sequences': locus_tag_sequences,
             'all_codon_counts': dict(all_codon_counts),
-            'all_cods': all_cods,
+            'all_cods': list(all_cods),
             'total_cds_length': total_cds_length,
             'codon_order': codon_order
         }
 
     except Exception:
-        sys.stderr.write('Error pre-processing genome file.\n')
+        sys.stderr.write('Error in genome preprocessing.\n')
         sys.stderr.write(traceback.format_exc() + '\n')
         sys.exit(1)
 
@@ -250,18 +274,16 @@ def codoff_main_gbk_with_preprocessed(
         Dictionary containing analysis results with keys: 'emp_pval_freq', 'cosine_distance',
         'rho', 'codon_order', 'focal_region_codons', 'background_genome_codons', or None if error
     """
-
     # Extract pre-processed data
     locus_tag_sequences = preprocessed_genome['locus_tag_sequences']
-    all_cods = preprocessed_genome['all_cods']
+    all_cods = set(preprocessed_genome['all_cods'])
     total_cds_length = preprocessed_genome['total_cds_length']
-    codon_order = preprocessed_genome['codon_order']
 
     # Validate focal GenBank files
     try:
-        assert (check_data_type(focal_genbank_files, list))
+        assert (isinstance(focal_genbank_files, list))
         for reg_gbk in focal_genbank_files:
-            assert (check_data_type(reg_gbk, str))
+            assert (isinstance(reg_gbk, str))
             assert (os.path.isfile(reg_gbk))
             assert (util.check_is_genbank_with_cds(reg_gbk))
     except Exception:
@@ -272,6 +294,7 @@ def codoff_main_gbk_with_preprocessed(
     # Clear caches at the start of analysis
     _clear_caches()
 
+    # Initialize data structures
     cod_freq_dict_focal = defaultdict(int)
     cod_freq_dict_background = defaultdict(int)
     all_codon_counts_bg = defaultdict(int)
@@ -304,7 +327,8 @@ def codoff_main_gbk_with_preprocessed(
                     focal_lts.add(locus_tag)
             ogbk.close()
 
-        # Calculate focal region codon frequencies using pre-processed data
+        # Calculate focal region codon frequencies using preprocessed data
+        # (like baseline implementation - use genome sequences, not BGC sequences)
         focal_cds_length = 0
         for locus_tag in focal_lts:
             if locus_tag in locus_tag_sequences:
@@ -316,39 +340,40 @@ def codoff_main_gbk_with_preprocessed(
                         cod_freq_dict_focal[codon] += 1
                         all_cods.add(codon)
                     foc_codon_count += len(codons)
-                    gene_codons[locus_tag] = codons
-                    gene_list.append(locus_tag)
 
         # Calculate background genome codon frequencies using pre-processed data
+        # Process ALL genes (like original implementation) but categorize codons as focal/background
         for locus_tag, seq in locus_tag_sequences.items():
-            if locus_tag not in focal_lts:
-                if len(str(seq)) % 3 == 0:
-                    codons = _get_cached_codons(seq, locus_tag)
-                    for codon in codons:
+            if len(str(seq)) % 3 == 0:
+                codons = _get_cached_codons(seq, locus_tag)
+                # Add ALL genes to gene_list and gene_codons for simulation
+                gene_codons[locus_tag] = codons
+                gene_list.append(locus_tag)
+
+                # Categorize codons as focal or background
+                for codon in codons:
+                    all_codon_counts_bg[codon] += 1
+                    if locus_tag in focal_lts:
+                        # This codon is from focal region
+                        pass  # Already counted in focal region processing above
+                    else:
+                        # This codon is from background
                         cod_freq_dict_background[codon] += 1
-                        all_codon_counts_bg[codon] += 1
 
         # Check if focal region is too large
         size_comparison = focal_cds_length / total_cds_length
         if size_comparison >= 0.05:
             sys.stderr.write('Error: The size of the focal region is >5%% of the full genome. This is not be appropriate for codoff analysis.\n')
-            sys.exit(1)
-
-        if foc_codon_count == 0:
-            sys.stderr.write('Error: No valid coding sequences found in focal region.\n')
+            sys.stderr.write('Focal region(s): %s\n' % focal_genbank_files)
             sys.exit(1)
 
         if verbose:
             sys.stderr.write('Focal region codon count: %d\n' % foc_codon_count)
             sys.stderr.write('Background genome codon count: %d\n' % sum(all_codon_counts_bg.values()))
-            sys.stderr.write('Focal region CDS length: %d bp\n' % focal_cds_length)
-            sys.stderr.write('Total CDS length: %d bp\n' % total_cds_length)
 
         # Call the main statistical analysis function
         return _stat_calc_and_simulation(
-            cod_freq_dict_focal, cod_freq_dict_background, all_cods, codon_order,
-            gene_codons, gene_list, foc_codon_count, outfile, plot_outfile,
-            threads, verbose, random_seed
+            all_cods, cod_freq_dict_focal, cod_freq_dict_background, gene_list, gene_codons, foc_codon_count, all_codon_counts_bg, outfile=outfile, plot_outfile=plot_outfile, verbose=verbose, threads=threads, random_seed=random_seed
         )
 
     except Exception:
@@ -357,14 +382,9 @@ def codoff_main_gbk_with_preprocessed(
         sys.exit(1)
 
 
-def _get_cache_stats() -> Dict[str, int]:
-    """Get cache statistics for monitoring performance."""
-    global _codon_extraction_cache, _codon_counts_cache
-    return {
-        'codon_extraction_cache_size': len(_codon_extraction_cache),
-        'codon_counts_cache_size': len(_codon_counts_cache),
-        'total_cached_sequences': len(_codon_extraction_cache)
-    }
+def _codoff_worker_wrapper(args):
+    """Wrapper function for multiprocessing imap."""
+    return _codoff_worker_function(*args)
 
 
 def _codoff_worker_function(
@@ -372,8 +392,12 @@ def _codoff_worker_function(
     region_freqs_list: List[List[float]],
     codon_order: List[str],
     observed_cosine_distance: float,
-    all_cds_codon_count_arrays: List[List[int]],
-    random_seed: Optional[int] = None
+    all_gene_codon_count_arrays: List[List[int]],
+    gene_list: List[str],
+    gene_codons: Dict[str, List[str]],
+    foc_codon_count: int,
+    random_seed: Optional[int] = None,
+    worker_id: int = 0
 ) -> SimulationResults:
     """Codoff simulation worker function for parallel processing.
 
@@ -393,75 +417,72 @@ def _codoff_worker_function(
     except ImportError:
         return 0, []
 
-    if cpu_simulations <= 0 or not all_cds_codon_count_arrays or not codon_order:
+    if cpu_simulations <= 0 or not all_gene_codon_count_arrays or not codon_order:
         return 0, []
 
     # Set random seed for reproducible results
+    # Each worker gets a different seed based on worker_id to ensure different sequences
     if random_seed is not None:
-        np.random.seed(random_seed)
-        random.seed(random_seed)
+        worker_seed = random_seed + worker_id
+    else:
+        worker_seed = 42 + worker_id
+
+    np.random.seed(worker_seed)
+    random.seed(worker_seed)
 
     emp_count = 0
     sim_cosine_distances: List[float] = []
 
-    # Calculate target codon count from region
-    target_codon_count = int(sum(region_freqs_list))
-
-    # Pre-compute total codon counts
-    total_codon_counts = np.sum(all_cds_codon_count_arrays, axis=0, dtype=np.float64)
-
-    # Pre-compute individual CDS total codon counts
-    cds_total_codons = np.sum(all_cds_codon_count_arrays, axis=1)
-    num_cds = len(all_cds_codon_count_arrays)
-    cds_indices = np.arange(num_cds)
+    # Pre-compute total codon counts for efficiency
+    total_codon_counts = np.sum(all_gene_codon_count_arrays, axis=0, dtype=np.float64)
 
     for sim_num in range(cpu_simulations):
         try:
-            # Shuffle CDS indices
-            np.random.shuffle(cds_indices)
+            # Shuffle gene indices instead of gene list (same as serial simulation)
+            random.shuffle(gene_list)
+            limit_hit = False
+            cod_count = 0
+            foc_codon_counts = np.zeros(len(codon_order), dtype=np.float64)
 
-            # Initialize simulation focal frequencies
-            sim_focal_freqs = np.zeros(len(codon_order), dtype=np.float64)
-            total_codons_collected = 0
+            for g in gene_list:
+                if not limit_hit:
+                    # Get pre-computed codon count array for this gene (same as serial simulation)
+                    sequence = ''.join(gene_codons[g])
+                    gene_codon_count_array = _get_cached_codon_counts(sequence, g, codon_order)
+                    gene_total_codons = np.sum(gene_codon_count_array)
 
-            # Sample codons from shuffled CDS until target count reached
-            for cds_idx in cds_indices:
-                cds_codon_count = cds_total_codons[cds_idx]
-
-                if total_codons_collected + cds_codon_count <= target_codon_count:
-                    # Take entire CDS
-                    sim_focal_freqs += all_cds_codon_count_arrays[cds_idx]
-                    total_codons_collected += cds_codon_count
+                    if cod_count + gene_total_codons <= foc_codon_count:
+                        # Take entire gene
+                        foc_codon_counts += np.array(gene_codon_count_array)
+                        cod_count += gene_total_codons
+                    else:
+                        # Partial gene needed - sample proportionally
+                        remaining_codons = foc_codon_count - cod_count
+                        if remaining_codons > 0 and gene_total_codons > 0:
+                            proportion = remaining_codons / gene_total_codons
+                            foc_codon_counts += np.array(gene_codon_count_array) * proportion
+                        break
                 else:
-                    # Partial CDS needed - sample proportionally
-                    remaining_codons = target_codon_count - total_codons_collected
-                    if remaining_codons > 0 and cds_codon_count > 0:
-                        proportion = remaining_codons / cds_codon_count
-                        sim_focal_freqs += all_cds_codon_count_arrays[cds_idx] * proportion
                     break
 
-            if np.sum(sim_focal_freqs) == 0:
-                sim_cosine_distances.append(1.0)
-                continue
-
             # Calculate background frequencies
-            sim_background_freqs = total_codon_counts - sim_focal_freqs
+            bg_cod_freqs = total_codon_counts - foc_codon_counts
 
             # Compute cosine distance with proper zero-vector handling
             try:
                 # Check for zero vectors to avoid scipy warnings
-                if np.sum(sim_focal_freqs) == 0 or np.sum(sim_background_freqs) == 0:
-                    sim_distance = 1.0
+                if np.sum(foc_codon_counts) == 0 or np.sum(bg_cod_freqs) == 0:
+                    sim_cosine_distance = 1.0
                 else:
-                    sim_distance = spatial.distance.cosine(sim_focal_freqs, sim_background_freqs)
-                    if not np.isfinite(sim_distance):
-                        sim_distance = 1.0
+                    sim_cosine_distance = spatial.distance.cosine(foc_codon_counts, bg_cod_freqs)
+                    if not np.isfinite(sim_cosine_distance):
+                        sim_cosine_distance = 1.0
             except Exception:
-                sim_distance = 1.0
+                sim_cosine_distance = 1.0
 
-            sim_cosine_distances.append(sim_distance)
+            sim_cosine_distances.append(sim_cosine_distance)
 
-            if sim_distance >= observed_cosine_distance:
+            if sim_cosine_distance >= observed_cosine_distance:
                 emp_count += 1
 
         except Exception:
@@ -1060,6 +1081,10 @@ def _stat_calc_and_simulation(
     if random_seed is not None:
         np.random.seed(random_seed)
         random.seed(random_seed)
+    else:
+        # Use a fixed default seed to ensure deterministic behavior
+        np.random.seed(42)
+        random.seed(42)
 
     cod_order = []
     foc_cod_freqs = []
@@ -1137,20 +1162,41 @@ def _stat_calc_and_simulation(
         for cpu_id in range(threads):
             cpu_simulations = simulations_per_cpu + (1 if cpu_id < remaining_simulations else 0)
             if cpu_simulations > 0:
+                # Use a different random seed for each worker to ensure different sequences
+                # This will produce different results but not systematically increasing P-values
+                worker_seed = (random_seed + cpu_id * 1000) if random_seed is not None else (42 + cpu_id * 1000)
                 worker_args.append([
                     cpu_simulations,
                     foc_cod_freqs.tolist(),  # Convert numpy arrays to lists for pickling
                     cod_order,
                     cosine_distance,
                     all_gene_codon_count_arrays,
-                    random_seed
+                    gene_list.copy(),  # Make a copy for each worker to avoid shared reference issues
+                    gene_codons,
+                    foc_codon_count,
+                    worker_seed,
+                    cpu_id  # Pass worker_id to ensure different random sequences
                 ])
 
         if worker_args:
             try:
-                # Run parallel simulations
+                # Set start method to 'spawn' to minimize dock appearance on macOS
+                multiprocessing.set_start_method('spawn', force=True)
+                # Run parallel simulations with progress bar
                 with Pool(processes=threads) as pool:
-                    worker_results = pool.starmap(_codoff_worker_function, worker_args)
+                    if verbose:
+                        sys.stderr.write("Running parallel simulation...\n")
+                        # Use imap to get results as they complete
+                        worker_results = []
+                        total_workers = len(worker_args)
+                        for i, result in enumerate(pool.imap(_codoff_worker_wrapper, worker_args)):
+                            worker_results.append(result)
+                            # Show progress as workers complete using the progress bar utility
+                            completed = i + 1
+                            util.print_progress_bar(completed, total_workers, prefix='Simulation Progress:', suffix='Complete', length=50)
+                    else:
+                        # No progress bar for non-verbose mode
+                        worker_results = pool.starmap(_codoff_worker_function, worker_args)
 
                 # Combine results
                 emp_pval: int = 0

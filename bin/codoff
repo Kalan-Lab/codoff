@@ -57,6 +57,7 @@ def create_parser():
 	parser.add_argument('-f', '--focal-genbanks', nargs='+', help="Path to focal region GenBank(s) for isolate. Locus tags must match with tags in full-genome GenBank.", required=False, default=None)
 	parser.add_argument('-o', '--outfile', help="Path to output file [Default is standard output].", required=False, default="stdout")
 	parser.add_argument('-p', '--plot-outfile', help="Plot output file name (will be in SVG format). If not provided, no plot will be made.", required=False, default=None)
+	parser.add_argument('-t', '--threads', type=int, help="Number of threads for parallel simulation [Default is 1].", required=False, default=1)
 	parser.add_argument('-v', '--version', action='store_true', help="Print version and exist", required=False, default=False)
 	args = parser.parse_args()
 	return args
@@ -83,6 +84,7 @@ def main():
 	focal_genbank_files = myargs.focal_genbanks
 	outfile = myargs.outfile
 	plot_outfile = myargs.plot_outfile
+	threads = myargs.threads
 
 	"""
 	START WORKFLOW
@@ -94,7 +96,8 @@ def main():
 			focal_genbank_files=focal_genbank_files,
 			outfile=outfile,
 			plot_outfile=plot_outfile,
-			verbose=True
+			verbose=True,
+			threads=threads
 		)
 	elif focal_scaffold != None and focal_start_coord != None and focal_end_coord != None:
 		codoff.codoff_main_coords(
@@ -104,7 +107,8 @@ def main():
 			focal_end_coord=focal_end_coord,
 			outfile=outfile,
 			plot_outfile=plot_outfile,
-			verbose=True
+			verbose=True,
+			threads=threads
 		)
 	else:
 		sys.stderr.write('Error: Insuffient input provided!\n')

@@ -1180,8 +1180,6 @@ def _stat_calc_and_simulation(
 
         if worker_args:
             try:
-                # Set start method to 'spawn' to minimize dock appearance on macOS
-                multiprocessing.set_start_method('spawn', force=True)
                 # Run parallel simulations with progress bar
                 with Pool(processes=threads) as pool:
                     if verbose:

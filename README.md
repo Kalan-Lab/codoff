@@ -79,6 +79,23 @@ codoff -f Sw_LK413/NZ_JALXLO020000001.1.region001.gbk -g Sw_LK413/LK413.gbk
 
 Here, we also requested the `-p` argument to generate a plot of the simulated distribution of cosine distances for regions of similar size to the focal region and the actual cosine distance for the focal region/cluster (blue vertical line):
 
+### Example 3: Using parallel processing for faster simulation
+
+codoff now supports parallel processing to significantly speed up the 10,000 simulation iterations. By default, it uses sequential processing (1 process), but you can enable parallel processing:
+
+```bash
+# Use sequential processing (default)
+codoff -f region.gbk -g genome.gbk
+
+# Use 4 parallel processes for faster simulation
+codoff -f region.gbk -g genome.gbk --max-jobs 4
+
+# Use all available CPU cores (replace 8 with your CPU count)
+codoff -f region.gbk -g genome.gbk --max-jobs 8
+```
+
+The parallelization provides substantial performance improvements, especially on multi-core systems, while maintaining the same statistical accuracy.
+
 ![figure](https://raw.githubusercontent.com/Kalan-Lab/codoff/main/codoff_actual_empirical_pvalue_image.svg)
 
 ### Detailed example with interpretation
@@ -98,7 +115,7 @@ Beginning in v1.2.0, codoff can also be used as a function in your Python code. 
 ## Commandline usage 
 
 ```
-usage: codoff [-h] -g FULL_GENOME [-s SCAFFOLD] [-a START_COORD] [-b END_COORD] [-f FOCAL_GENBANKS [FOCAL_GENBANKS ...]] [-o OUTFILE] [-p PLOT_OUTFILE] [-v]
+usage: codoff [-h] -g FULL_GENOME [-s SCAFFOLD] [-a START_COORD] [-b END_COORD] [-f FOCAL_GENBANKS [FOCAL_GENBANKS ...]] [-o OUTFILE] [-p PLOT_OUTFILE] [-j MAX_JOBS] [-v]
 
 	Program: codoff
 	Author: Rauf Salamzade
@@ -144,6 +161,8 @@ options:
                         Path to output file [Default is standard output].
   -p PLOT_OUTFILE, --plot-outfile PLOT_OUTFILE
                         Plot output file name (will be in SVG format). If not provided, no plot will be made.
+  -j MAX_JOBS, --max-jobs MAX_JOBS
+                        Maximum number of parallel processes to use for simulation [Default: 1 (sequential)].
   -v, --version         Print version and exist
 ```
 

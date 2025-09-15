@@ -16,9 +16,96 @@ import math
 import traceback
 import seaborn as sns
 import matplotlib.pyplot as plt
+import multiprocessing as mp
+from functools import partial
 
 valid_bases = set(['A', 'C', 'G', 'T'])
+
+def _simulation_batch_worker(shared_data, batch_range):
+	"""
+	Batch worker function for parallel simulation execution.
+	Processes multiple simulations in a single worker to reduce overhead.
 	
+	Parameters
+	----------
+	shared_data : dict
+		Contains shared data: gene_list, gene_codons, foc_codon_count, bkg_cod_freqs, cod_order, cosine_distance
+	batch_range : tuple
+		(start_idx, end_idx) for the batch of simulations to process
+	
+	Returns
+	-------
+	list
+		List of (sim_cosine_distance, exceeds_observed) tuples
+	"""
+	# Set random seed in each worker process for deterministic behavior
+	random.seed(42)
+	
+	start_idx, end_idx = batch_range
+	gene_list = shared_data['gene_list']
+	gene_codons = shared_data['gene_codons']
+	foc_codon_count = shared_data['foc_codon_count']
+	bkg_cod_freqs = shared_data['bkg_cod_freqs']
+	cod_order = shared_data['cod_order']
+	cosine_distance = shared_data['cosine_distance']
+	
+	results = []
+	
+	for sim in range(start_idx, end_idx):
+		# Create a local copy of gene_list to avoid shared state issues
+		local_gene_list = gene_list.copy()
+		random.shuffle(local_gene_list)
+		
+		limit_hit = False
+		cod_count = 0
+		foc_codon_counts = defaultdict(int)
+		
+		for g in local_gene_list:
+			if not limit_hit:
+				# Calculate how many codons we can take from this gene
+				remaining_codons = foc_codon_count - cod_count
+				if remaining_codons <= 0:
+					limit_hit = True
+					break
+				
+				# Add codons from this gene using proportional sampling
+				gene_total_codons = sum(gene_codons[g].values())
+				codons_to_sample = min(gene_total_codons, remaining_codons)
+				
+				# Calculate proportional counts for each codon type
+				for c, count in gene_codons[g].items():
+					# Calculate proportional count: (original_count / gene_total) * codons_to_sample
+					proportional_count = round((count / gene_total_codons) * codons_to_sample)
+					foc_codon_counts[c] += proportional_count
+					cod_count += proportional_count
+				
+				remaining_codons -= codons_to_sample
+				if remaining_codons <= 0:
+					limit_hit = True
+			else:
+				break
+
+		foc_cod_freqs = []
+		for cod in cod_order:
+			foc_cod_freqs.append(foc_codon_counts[cod])
+		
+		# Normalize to frequencies
+		total_foc_codons = sum(foc_cod_freqs)
+		if total_foc_codons > 0:
+			foc_cod_freqs = [x/total_foc_codons for x in foc_cod_freqs]
+		else:
+			foc_cod_freqs = [0.0] * len(cod_order)
+		
+		# Calculate cosine distance against the background frequencies
+		foc_cod_freqs = numpy.array(foc_cod_freqs, dtype=numpy.float64)
+		sim_cosine_distance = spatial.distance.cosine(foc_cod_freqs, bkg_cod_freqs)
+		
+		exceeds_observed = bool(sim_cosine_distance >= cosine_distance)
+		results.append((sim_cosine_distance, exceeds_observed))
+	
+	return results
+
+
 def check_data_type(variable, expected_type):
 	"""
 	Check if the variable is of the expected type.
@@ -37,7 +124,8 @@ def check_data_type(variable, expected_type):
 	"""
 	return isinstance(variable, expected_type)
 
-def codoff_main_gbk(full_genome_file, focal_genbank_files, outfile=None, plot_outfile=None, verbose=True):
+
+def codoff_main_gbk(full_genome_file, focal_genbank_files, outfile=None, plot_outfile=None, verbose=True, max_jobs=None):
 	"""
 	A full genome and a specific region must each be provided in 
 	GenBank format, with locus_tags overlapping. locus_tags in the
@@ -105,7 +193,7 @@ def codoff_main_gbk(full_genome_file, focal_genbank_files, outfile=None, plot_ou
 	cod_freq_dict_background = defaultdict(int)
 	all_cods = set([])
 	all_codon_counts = defaultdict(int)
-	gene_codons = defaultdict(list)
+	gene_codons = defaultdict(lambda: defaultdict(int))
 	gene_list = []
 	foc_codon_count = 0
 	try:
@@ -177,6 +265,14 @@ def codoff_main_gbk(full_genome_file, focal_genbank_files, outfile=None, plot_ou
 					total_cds_length += len(nucl_seq)
 		ofgbk.close()
 		
+		# Check for missing focal locus tags and issue warnings
+		missing_focal_lts = focal_lts - set(locus_tag_sequences.keys())
+		if missing_focal_lts and verbose:
+			sys.stderr.write('Warning: The following focal region locus tags were not found in the full genome GenBank file:\n')
+			for missing_lt in sorted(missing_focal_lts):
+				sys.stderr.write('  %s\n' % missing_lt)
+			sys.stderr.write('These locus tags will be ignored in the analysis.\n')
+		
 		if total_cds_length == 0:
 			if verbose:
 				sys.stderr.write('Error: The genome appears to have no CDS features. Please check the input.\n')
@@ -204,7 +300,7 @@ def codoff_main_gbk(full_genome_file, focal_genbank_files, outfile=None, plot_ou
 			codon_seq = [str(seq)[i:i + 3] for i in range(0, len(str(seq)), 3)]
 			for cod in list(codon_seq):
 				if not(len(cod) == 3 and cod[0] in valid_bases and cod[1] in valid_bases and cod[2] in valid_bases): continue
-				gene_codons[locus_tag].append(cod)
+				gene_codons[locus_tag][cod] += 1
 				all_codon_counts[cod] += 1
 				if locus_tag in focal_lts:
 					foc_codon_count += 1
@@ -218,10 +314,11 @@ def codoff_main_gbk(full_genome_file, focal_genbank_files, outfile=None, plot_ou
 		sys.exit(1)
 
 	# run rest of codoff (separate function to avoid redundancy between codoff_main_gbk() and codoff_main_coords())
-	result = _stat_calc_and_simulation(all_cods, cod_freq_dict_focal, cod_freq_dict_background, gene_list, gene_codons, foc_codon_count, all_codon_counts, outfile=outfile, plot_outfile=plot_outfile, verbose=verbose)
+	result = _stat_calc_and_simulation(all_cods, cod_freq_dict_focal, cod_freq_dict_background, gene_list, gene_codons, foc_codon_count, all_codon_counts, outfile=outfile, plot_outfile=plot_outfile, verbose=verbose, max_jobs=max_jobs)
 	return result
 
-def codoff_main_coords(full_genome_file, focal_scaffold, focal_start_coord, focal_end_coord, outfile=None, plot_outfile=None, verbose=True):
+
+def codoff_main_coords(full_genome_file, focal_scaffold, focal_start_coord, focal_end_coord, outfile=None, plot_outfile=None, verbose=True, max_jobs=None):
 	"""
 	A full genome file can be provided in either GenBank or FASTA 
 	format. If the latter, pyrodigal is used for gene calling, 
@@ -298,7 +395,7 @@ def codoff_main_coords(full_genome_file, focal_scaffold, focal_start_coord, foca
 	cod_freq_dict_background = defaultdict(int)
 	all_cods = set([])
 	all_codon_counts = defaultdict(int)
-	gene_codons = defaultdict(list)
+	gene_codons = defaultdict(lambda: defaultdict(int))
 	gene_list = []
 	foc_codon_count = 0
 
@@ -349,6 +446,12 @@ def codoff_main_coords(full_genome_file, focal_scaffold, focal_start_coord, foca
 						total_cds_length += len(nucl_seq)
 			ofgbk.close()
 			
+			# Check if any focal locus tags were found and issue warning if none
+			if not focal_lts and verbose:
+				sys.stderr.write('Warning: No CDS features were found in the specified focal region coordinates.\n')
+				sys.stderr.write('Focal scaffold: %s, Start: %d, End: %d\n' % (focal_scaffold, focal_start_coord, focal_end_coord))
+				sys.stderr.write('Please check that the coordinates are correct and contain CDS features.\n')
+			
 			if total_cds_length == 0:
 				sys.stderr.write('Error: The genome appears to have no CDS features. Please check the input.\n')
 				sys.exit(1)
@@ -374,7 +477,7 @@ def codoff_main_coords(full_genome_file, focal_scaffold, focal_start_coord, foca
 				codon_seq = [str(seq)[i:i + 3] for i in range(0, len(str(seq)), 3)]
 				for cod in list(codon_seq):
 					if not(len(cod) == 3 and cod[0] in valid_bases and cod[1] in valid_bases and cod[2] in valid_bases): continue
-					gene_codons[locus_tag].append(cod)
+					gene_codons[locus_tag][cod] += 1
 					all_codon_counts[cod] += 1
 					if locus_tag in focal_lts:
 						foc_codon_count += 1
@@ -436,7 +539,7 @@ def codoff_main_coords(full_genome_file, focal_scaffold, focal_start_coord, foca
 				codon_seq = [str(seq)[i:i + 3] for i in range(0, len(str(seq)), 3)]
 				for cod in list(codon_seq):
 					if not(len(cod) == 3 and cod[0] in valid_bases and cod[1] in valid_bases and cod[2] in valid_bases): continue
-					gene_codons[locus_tag].append(cod)
+					gene_codons[locus_tag][cod] += 1
 					all_codon_counts[cod] += 1
 					if locus_tag in focal_lts:
 						foc_codon_count += 1
@@ -450,13 +553,17 @@ def codoff_main_coords(full_genome_file, focal_scaffold, focal_start_coord, foca
 			sys.exit(1)
 		
 		# run rest of codoff (separate function to avoid redundancy between codoff_main_gbk() and codoff_main_coords())
-		result = _stat_calc_and_simulation(all_cods, cod_freq_dict_focal, cod_freq_dict_background, gene_list, gene_codons, foc_codon_count, all_codon_counts, outfile=outfile, plot_outfile=plot_outfile, verbose=verbose)
+		result = _stat_calc_and_simulation(all_cods, cod_freq_dict_focal, cod_freq_dict_background, gene_list, gene_codons, foc_codon_count, all_codon_counts, outfile=outfile, plot_outfile=plot_outfile, verbose=verbose, max_jobs=max_jobs)
 		return result
 	
-def _stat_calc_and_simulation(all_cods, cod_freq_dict_focal, cod_freq_dict_background, gene_list, gene_codons, foc_codon_count, all_codon_counts, outfile=None, plot_outfile=None, verbose=True):
+	
+def _stat_calc_and_simulation(all_cods, cod_freq_dict_focal, cod_freq_dict_background, gene_list, gene_codons, foc_codon_count, all_codon_counts, outfile=None, plot_outfile=None, verbose=True, max_jobs=None):
 	"""
 	private function that performs the main statistical calculations and 
 	"""
+	# Set random seed for reproducible results
+	random.seed(42)
+	
 	cod_order = []
 	foc_cod_freqs = []
 	bkg_cod_freqs = []
@@ -488,39 +595,138 @@ def _stat_calc_and_simulation(all_cods, cod_freq_dict_focal, cod_freq_dict_backg
 		sys.stderr.write(traceback.format_exc() + '\n')
 		sys.exit(1)
 
+	# Determine number of processes to use
+	if max_jobs is None:
+		max_jobs = 1  # Default to sequential processing
+	else:
+		max_jobs = min(max_jobs, mp.cpu_count())
+	
+	# For small datasets, force sequential processing to avoid overhead
+	# Only use parallel processing for larger datasets where it provides benefit
+	if max_jobs > 1 and len(gene_list) < 500:
+		if verbose:
+			sys.stderr.write(f'Dataset too small for parallel processing (only {len(gene_list)} genes). Using sequential processing.\n')
+		max_jobs = 1
+	
+	# Prepare shared data for parallel simulation (only created once)
+	# Convert defaultdict to regular dict for pickling
+	gene_codons_dict = {gene: dict(codons) for gene, codons in gene_codons.items()}
+	
+	# Create shared data dictionary (passed once to all workers)
+	# Convert background counts to frequencies for worker functions
+	bkg_cod_freqs = []
+	for cod in cod_order:
+		bkg_cod_freqs.append(cod_freq_dict_background[cod])
+	bkg_cod_freqs = numpy.array(bkg_cod_freqs, dtype=numpy.float64)
+	
+	shared_data = {
+		'gene_list': gene_list,
+		'gene_codons': gene_codons_dict,
+		'foc_codon_count': foc_codon_count,
+		'bkg_cod_freqs': bkg_cod_freqs,
+		'cod_order': cod_order,
+		'cosine_distance': cosine_distance
+	}
+	
 	emp_pval = 0
-	if verbose:
-		util.printProgressBar(0, 10, prefix = 'Progress:', suffix = 'Complete', length = 50)
 	sim_cosine_distances = []
-	for sim in range(0, 10000):
-		if sim % 1000 == 0 and sim > 0 and verbose:
-			util.printProgressBar(math.floor(sim/1000) + 1, 10, prefix = 'Progress:', suffix = 'Complete', length = 50)
-		random.shuffle(gene_list)
-		limit_hit = False
-		cod_count = 0
-		foc_codon_counts = defaultdict(int)
-		for g in gene_list:
-			if not limit_hit:
-				for c in gene_codons[g]:
-					foc_codon_counts[c] += 1
-					cod_count += 1
-					if cod_count >= foc_codon_count:
+	
+	if max_jobs == 1:
+		# Sequential processing - avoid multiprocessing overhead
+		if verbose:
+			sys.stderr.write('Running simulation sequentially...\n')
+			util.printProgressBar(0, 10, prefix = 'Progress:', suffix = 'Complete', length = 50)
+		
+		# Run sequential simulation
+		for sim in range(10000):
+			# Create a local copy of gene_list to avoid shared state issues
+			local_gene_list = gene_list.copy()
+			random.shuffle(local_gene_list)
+			
+			limit_hit = False
+			cod_count = 0
+			foc_codon_counts = defaultdict(int)
+			
+			for g in local_gene_list:
+				if not limit_hit:
+					# Calculate how many codons we can take from this gene
+					remaining_codons = foc_codon_count - cod_count
+					if remaining_codons <= 0:
 						limit_hit = True
 						break
-			else:
-				break
+					
+					# Add codons from this gene using proportional sampling
+					gene_total_codons = sum(gene_codons_dict[g].values())
+					codons_to_sample = min(gene_total_codons, remaining_codons)
+					
+					# Calculate proportional counts for each codon type
+					for c, count in gene_codons_dict[g].items():
+						# Calculate proportional count: (original_count / gene_total) * codons_to_sample
+						proportional_count = round((count / gene_total_codons) * codons_to_sample)
+						foc_codon_counts[c] += proportional_count
+						cod_count += proportional_count
+					
+					remaining_codons -= codons_to_sample
+					if remaining_codons <= 0:
+						limit_hit = True
+				else:
+					break
 
-		foc_cod_freqs = []
-		bg_cod_freqs = []
-		for cod in cod_order:
-			foc_cod_freqs.append(foc_codon_counts[cod])
-			bg_cod_freqs.append(all_codon_counts[cod] - foc_codon_counts[cod])
-		foc_cod_freqs = numpy.array(foc_cod_freqs, dtype=numpy.float64)
-		bg_cod_freqs = numpy.array(bg_cod_freqs, dtype=numpy.float64)
-		sim_cosine_distance = spatial.distance.cosine(foc_cod_freqs, bg_cod_freqs)
-		sim_cosine_distances.append(sim_cosine_distance)
-		if sim_cosine_distance >= cosine_distance:
-			emp_pval += 1
+			sim_foc_cod_freqs = []
+			for cod in cod_order:
+				sim_foc_cod_freqs.append(foc_codon_counts[cod])
+			
+			# Normalize to frequencies
+			total_foc_codons = sum(sim_foc_cod_freqs)
+			if total_foc_codons > 0:
+				sim_foc_cod_freqs = [x/total_foc_codons for x in sim_foc_cod_freqs]
+			else:
+				sim_foc_cod_freqs = [0.0] * len(cod_order)
+			
+			# Calculate cosine distance against the background frequencies
+			sim_foc_cod_freqs = numpy.array(sim_foc_cod_freqs, dtype=numpy.float64)
+			sim_cosine_distance = spatial.distance.cosine(sim_foc_cod_freqs, bkg_cod_freqs)
+			
+			sim_cosine_distances.append(sim_cosine_distance)
+			if sim_cosine_distance >= cosine_distance:
+				emp_pval += 1
+			
+			if (sim + 1) % 1000 == 0 and verbose:
+				util.printProgressBar(math.floor((sim + 1)/1000), 10, prefix = 'Progress:', suffix = 'Complete', length = 50)
+	else:
+		# Parallel processing with batched approach for better performance
+		if verbose:
+			sys.stderr.write(f'Running simulation with {max_jobs} parallel processes...\n')
+			util.printProgressBar(0, 10, prefix = 'Progress:', suffix = 'Complete', length = 50)
+		
+		# Batch simulations to reduce multiprocessing overhead
+		# Each worker will process multiple simulations
+		sims_per_worker = max(1, 10000 // max_jobs)
+		batches = []
+		for i in range(0, 10000, sims_per_worker):
+			batch_end = min(i + sims_per_worker, 10000)
+			batches.append((i, batch_end))
+		
+		# Run parallel simulation with batched approach
+		with mp.Pool(processes=max_jobs) as pool:
+			# Create a partial function that includes shared_data
+			from functools import partial
+			worker_func = partial(_simulation_batch_worker, shared_data)
+			
+			# Process batches in parallel
+			results = pool.map(worker_func, batches)
+			
+			# Collect results from all batches
+			completed = 0
+			for batch_results in results:
+				for sim_cosine_distance, exceeds_observed in batch_results:
+					sim_cosine_distances.append(sim_cosine_distance)
+					if exceeds_observed:
+						emp_pval += 1
+					
+					completed += 1
+					if completed % 1000 == 0 and verbose:
+						util.printProgressBar(math.floor(completed/1000), 10, prefix = 'Progress:', suffix = 'Complete', length = 50)
 
 	emp_pval_freq = (emp_pval+1)/10001
 

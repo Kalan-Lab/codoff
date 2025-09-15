@@ -102,14 +102,24 @@ def main():
 	msg = "Running codoff on %d BGC regions in %s" % (len(bgc_gbks), antismash_dir) 
 	sys.stdout.write(msg + '\n')
 
-	# Process each BGC region sequentially
+	# Extract genome codon data once to avoid redundant computation
+	sys.stdout.write('Extracting genome-wide codon usage data...\n')
+	try:
+		genome_data = codoff.extract_genome_codon_data(full_genome_file=genome_gbk, verbose=False)
+		sys.stdout.write('Successfully extracted genome data for %d genes.\n' % len(genome_data['gene_list']))
+	except:
+		sys.stderr.write('Unable to extract genome codon usage data.\n')
+		sys.stderr.write(traceback.format_exc() + '\n')
+		sys.exit(1)
+
+	# Process each BGC region using cached genome data
 	for bgc_gbk in bgc_gbks:
 		bgc_gbk_name = bgc_gbk.split('/')[-1].split('.gbk')[0]
 		bgc_outfile = output_dir + bgc_gbk_name + '.txt'
 		bgc_plotfile = output_dir + bgc_gbk_name + '.svg'
 		
 		try:
-			codoff.codoff_main_gbk(full_genome_file=genome_gbk,
+			codoff.process_bgc_with_cached_data(genome_data=genome_data,
 				focal_genbank_files=[bgc_gbk],
 				outfile=bgc_outfile,
 				plot_outfile=bgc_plotfile,

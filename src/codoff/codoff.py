@@ -125,7 +125,258 @@ def check_data_type(variable, expected_type):
 	return isinstance(variable, expected_type)
 
 
-def codoff_main_gbk(full_genome_file, focal_genbank_files, outfile=None, plot_outfile=None, verbose=True, max_jobs=None):
+def extract_genome_codon_data(full_genome_file, verbose=True):
+	"""
+	Extract codon usage data from the full genome file once to avoid redundant computation.
+	
+	Parameters
+	----------
+	full_genome_file : str
+		The path to the full genome file in GenBank format.
+	verbose : bool
+		Whether to print progress messages to stderr. Default is True.
+	
+	Returns
+	-------
+	dict
+		Dictionary containing:
+		- 'locus_tag_sequences': dict mapping locus_tag to nucleotide sequence
+		- 'gene_codons': dict mapping locus_tag to codon counts
+		- 'gene_list': list of all locus_tags
+		- 'all_cods': set of all codons found
+		- 'total_cds_length': total CDS length in the genome
+	"""
+	try:
+		assert(check_data_type(full_genome_file, str))
+		assert(os.path.isfile(full_genome_file))
+		assert(util.checkIsGenBankWithCDS(full_genome_file))
+	except:
+		sys.stderr.write('The full genome file must be a string to a file.\n')
+		sys.stderr.write(traceback.format_exc() + '\n')
+		sys.exit(1)
+
+	locus_tag_sequences = {}
+	gene_codons = defaultdict(lambda: defaultdict(int))
+	gene_list = []
+	all_cods = set([])
+	total_cds_length = 0
+	
+	try:
+		ofgbk = None
+		if full_genome_file.endswith('.gz'):
+			ofgbk = gzip.open(full_genome_file, 'rt')
+		else:
+			ofgbk = open(full_genome_file)
+		
+		for rec in SeqIO.parse(ofgbk, 'genbank'):
+			full_sequence = str(rec.seq)
+			for feature in rec.features:
+				if not feature.type == 'CDS': 
+					continue
+				locus_tag = None
+				try:
+					locus_tag = feature.qualifiers.get('locus_tag')[0]
+				except:
+					try:
+						locus_tag = feature.qualifiers.get('gene')[0]
+					except:
+						locus_tag = feature.qualifiers.get('protein_id')[0]
+				assert(locus_tag != None)
+				
+				all_coords, start, end, direction, is_multi_part = util.parseCDSCoord(str(feature.location))
+				if end >= len(full_sequence): 
+					end = len(full_sequence)
+				nucl_seq = ''
+				for sc, ec, dc in sorted(all_coords, key=itemgetter(0), reverse=False):
+					if ec >= len(full_sequence):
+						nucl_seq += full_sequence[sc - 1:]
+					else:
+						nucl_seq += full_sequence[sc - 1:ec]
+
+				if direction == '-':
+					nucl_seq = str(Seq(nucl_seq).reverse_complement())
+				locus_tag_sequences[locus_tag] = nucl_seq
+
+				if len(str(nucl_seq)) % 3 == 0:
+					total_cds_length += len(nucl_seq)
+					gene_list.append(locus_tag)
+					seq = locus_tag_sequences[locus_tag]
+					codon_seq = [str(seq)[i:i + 3] for i in range(0, len(str(seq)), 3)]
+					for cod in list(codon_seq):
+						if not(len(cod) == 3 and cod[0] in valid_bases and cod[1] in valid_bases and cod[2] in valid_bases): 
+							continue
+						gene_codons[locus_tag][cod] += 1
+						all_cods.add(cod)
+		ofgbk.close()
+		
+		if total_cds_length == 0:
+			if verbose:
+				sys.stderr.write('Error: The genome appears to have no CDS features. Please check the input.\n')
+			sys.exit(1)
+			
+	except:
+		sys.stderr.write('Issues with extracting codon usage info from genome GenBank file.\n')
+		sys.stderr.write(traceback.format_exc() + '\n')
+		sys.exit(1)
+
+	# Convert defaultdict to regular dict for better performance and pickling
+	gene_codons_dict = {gene: dict(codons) for gene, codons in gene_codons.items()}
+	
+	return {
+		'locus_tag_sequences': locus_tag_sequences,
+		'gene_codons': gene_codons_dict,
+		'gene_list': gene_list,
+		'all_cods': all_cods,
+		'total_cds_length': total_cds_length
+	}
+
+
+def process_bgc_with_cached_data(genome_data, focal_genbank_files, outfile=None, plot_outfile=None, verbose=True, max_jobs=None):
+	"""
+	Process BGC regions using pre-computed genome data to avoid redundant computation.
+	
+	Parameters
+	----------
+	genome_data : dict
+		Pre-computed genome data from extract_genome_codon_data()
+	focal_genbank_files : list
+		The list of paths to the GenBank files for the focal region.
+	outfile : str
+		The path to the output file. If not provided, the output will be 
+		printed to stdout.
+	plot_outfile : str
+		The path to the plot output file. If not provided, no plot will 
+		be made.
+	verbose : bool
+		Whether to print progress messages to stderr. Default is True.
+	max_jobs : int
+		Maximum number of parallel processes to use.
+	
+	Returns
+	-------
+	dict
+		Result dictionary from _stat_calc_and_simulation()
+	"""
+	try:
+		assert(check_data_type(focal_genbank_files, list))
+		for reg_gbk in focal_genbank_files:
+			assert(check_data_type(reg_gbk, str))
+			assert(os.path.isfile(reg_gbk))
+			assert(util.checkIsGenBankWithCDS(reg_gbk))
+	except:
+		sys.stderr.write('The focal region GenBank files must be a list of string paths to existing files.\n')
+		sys.stderr.write(traceback.format_exc() + '\n')
+		sys.exit(1)
+
+	if outfile != 'stdout' and outfile != None and os.path.isfile(outfile):
+		sys.stderr.write('The outfile must be a string path to a file which does not already exist.\n')
+		sys.stderr.write('Outfile: %s\n' % str(outfile))
+		sys.exit(1)
+
+	if plot_outfile != 'stdout' and plot_outfile != None and os.path.isfile(plot_outfile):
+		sys.stderr.write('The plot outfile must be a string path to a file which does not already exist.\n')
+		sys.stderr.write('Plot outfile: %s\n' % str(plot_outfile))
+		sys.exit(1)	
+
+	try:
+		assert(check_data_type(verbose, bool))
+	except:
+		sys.stderr.write('The verbose flag must be a boolean.\n')
+		sys.stderr.write('Verbose: %s\n' % str(verbose))
+		sys.stderr.write(traceback.format_exc() + '\n')
+		sys.exit(1)
+
+	# Extract pre-computed data
+	locus_tag_sequences = genome_data['locus_tag_sequences']
+	gene_codons = genome_data['gene_codons']
+	gene_list = genome_data['gene_list']
+	all_cods = genome_data['all_cods']
+	total_cds_length = genome_data['total_cds_length']
+
+	cod_freq_dict_focal = defaultdict(int)
+	cod_freq_dict_background = defaultdict(int)
+	all_codon_counts = defaultdict(int)
+	foc_codon_count = 0
+	focal_cds_length = 0
+
+	try:
+		# Parse GenBank files of focal regions for locus_tags
+		focal_lts = set([])
+		for foc_gbk in focal_genbank_files:
+			ogbk = None
+			if foc_gbk.endswith('.gz'):
+				ogbk = gzip.open(foc_gbk, 'rt')
+			else:
+				ogbk = open(foc_gbk)
+			for rec in SeqIO.parse(ogbk, 'genbank'):
+				for feature in rec.features:
+					if not feature.type == 'CDS': 
+						continue
+					locus_tag = None
+					try:
+						locus_tag = feature.qualifiers.get('locus_tag')[0]
+					except:
+						try:
+							locus_tag = feature.qualifiers.get('gene')[0]
+						except:
+							locus_tag = feature.qualifiers.get('protein_id')[0]
+					assert(locus_tag != None)
+					focal_lts.add(locus_tag)
+			ogbk.close()
+		
+		# Check for missing focal locus tags and issue warnings
+		missing_focal_lts = focal_lts - set(locus_tag_sequences.keys())
+		if missing_focal_lts and verbose:
+			sys.stderr.write('Warning: The following focal region locus tags were not found in the full genome GenBank file:\n')
+			for missing_lt in sorted(missing_focal_lts):
+				sys.stderr.write('  %s\n' % missing_lt)
+			sys.stderr.write('These locus tags will be ignored in the analysis.\n')
+		
+		# Calculate focal region statistics using pre-computed data
+		for locus_tag in locus_tag_sequences:
+			seq = locus_tag_sequences[locus_tag]
+			if not len(str(seq)) % 3 == 0:
+				if verbose:
+					sys.stderr.write("The locus tag %s is ignored because it was not of length 3.\n" % locus_tag)
+				continue
+			
+			if locus_tag in focal_lts:
+				focal_cds_length += len(seq)
+			
+			# Count codons for this gene
+			codon_seq = [str(seq)[i:i + 3] for i in range(0, len(str(seq)), 3)]
+			for cod in list(codon_seq):
+				if not(len(cod) == 3 and cod[0] in valid_bases and cod[1] in valid_bases and cod[2] in valid_bases): 
+					continue
+				all_codon_counts[cod] += 1
+				if locus_tag in focal_lts:
+					foc_codon_count += 1
+					cod_freq_dict_focal[cod] += 1
+				else:
+					cod_freq_dict_background[cod] += 1
+
+		if focal_cds_length == 0:
+			if verbose:
+				sys.stderr.write('Error: The focal region appears to have no CDS features. This might be because locus_tags in the focal region(s) GenBank file do not match locus_tags in the full genome GenBank file. Please check the input.\n')
+			sys.exit(1)
+
+		size_comparison = focal_cds_length/total_cds_length
+		if size_comparison >= 0.05:
+			sys.stderr.write('Error: The size of the focal region is >5%% of the full genome. This is not be appropriate for codoff analysis.\n')
+			sys.stderr.write('Focal region(s): %s\n' % str(focal_genbank_files))
+			sys.exit(1)
+
+	except:
+		sys.stderr.write('Issues with determining codon usage info for inputs with focal region and genome provided as GenBank.\n')
+		sys.stderr.write(traceback.format_exc() + '\n')
+		sys.exit(1)
+
+	# Run rest of codoff using pre-computed data
+	result = _stat_calc_and_simulation(all_cods, cod_freq_dict_focal, cod_freq_dict_background, gene_list, gene_codons, foc_codon_count, all_codon_counts, outfile=outfile, plot_outfile=plot_outfile, verbose=verbose, max_jobs=max_jobs)
+	return result
+
+
+def codoff_main_gbk(full_genome_file, focal_genbank_files, outfile=None, plot_outfile=None, verbose=True, max_jobs=None, genome_data=None):
 	"""
 	A full genome and a specific region must each be provided in 
 	GenBank format, with locus_tags overlapping. locus_tags in the
@@ -149,7 +400,16 @@ def codoff_main_gbk(full_genome_file, focal_genbank_files, outfile=None, plot_ou
 		be made.
 	* verbose: bool
 		Whether to print progress messages to stderr. Default is True.
+	* max_jobs: int
+		Maximum number of parallel processes to use.
+	* genome_data: dict, optional
+		Pre-computed genome data from extract_genome_codon_data() to avoid 
+		redundant computation. If provided, full_genome_file will be ignored.
 	"""
+	
+	# If genome_data is provided, use it instead of processing the full_genome_file
+	if genome_data is not None:
+		return process_bgc_with_cached_data(genome_data, focal_genbank_files, outfile, plot_outfile, verbose, max_jobs)
 	
 	try:
 		assert(check_data_type(full_genome_file, str))

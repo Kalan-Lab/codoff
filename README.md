@@ -79,24 +79,10 @@ codoff -f Sw_LK413/NZ_JALXLO020000001.1.region001.gbk -g Sw_LK413/LK413.gbk
 
 Here, we also requested the `-p` argument to generate a plot of the simulated distribution of cosine distances for regions of similar size to the focal region and the actual cosine distance for the focal region/cluster (blue vertical line):
 
-### Example 3: Using parallel processing for faster simulation
-
-codoff now supports parallel processing to significantly speed up the 10,000 simulation iterations. By default, it uses sequential processing (1 process), but you can enable parallel processing:
-
-```bash
-# Use sequential processing (default)
-codoff -f region.gbk -g genome.gbk
-
-# Use 4 parallel processes for faster simulation
-codoff -f region.gbk -g genome.gbk --max-jobs 4
-
-# Use all available CPU cores (replace 8 with your CPU count)
-codoff -f region.gbk -g genome.gbk --max-jobs 8
-```
-
-The parallelization provides substantial performance improvements, especially on multi-core systems, while maintaining the same statistical accuracy.
-
 ![figure](https://raw.githubusercontent.com/Kalan-Lab/codoff/main/codoff_actual_empirical_pvalue_image.svg)
+
+> [!NOTE]
+> P-values determined from simulations should be deterministic between runs using the same number of threads/processes but slight differences might arise betwen runs using non-exact commands.
 
 ### Detailed example with interpretation
 

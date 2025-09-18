@@ -87,7 +87,34 @@ A more detailed example on how homologous instances of the same five-gene operon
 
 ## Algorithm for computing empirical P-value
 
-To calculate an empirical P-value, we gather codons for each gene across the genome. First the codon frequency distribution of the focal-region/BGC genes is compared to the codon frequency distribution of the background genome (all other genes; genes which have lengths not divisible by 3 are ignored). After, we perform 10,000 simulations where in each simulation we shuffle the full genome-wide set of genes and go through the first N genes until the same number of codons as are present in the focal region/BGC/GCF are observed. The cosine distance between the observed codon frequency is compared to the remainder of the genome-wide codon distribution and checked for whether it is higher than what was actually observed for the BGC; if so, then an empirical P-value counter is appended a count of 1. The final empirical P-value produced is simply this count plus a pseudocount of 1 over 10,001.
+codoff uses a Monte Carlo simulation approach to calculate an empirical P-value to assess codon usage differences between the focal region(s) of interest and the background genome. The algorithm works as follows:
+
+### 1. Data Preparation
+- Extract all CDS features from the genome (genes with lengths divisible by 3)
+- Calculate codon frequency distributions for:
+  - **Focal region**: Codons from genes in the BGC/focal region
+  - **Background genome**: All remaining genes in the genome
+
+### 2. Statistical Comparison
+- Compute cosine distance between focal and background codon frequency distributions
+- Calculate Spearman correlation coefficient between the two distributions
+
+### 3. Monte Carlo Simulation
+For each of N simulations (default: 10,000, configurable with `--num-sims`):
+1. **Shuffle** the complete list of all genes in the genome
+2. **Select genes sequentially** from the shuffled list until accumulating the same number of codons as in the actual focal region
+3. **Calculate codon frequencies** for this simulated "focal" region
+4. **Calculate background frequencies** as: `total_genome_counts - simulated_focal_counts`
+5. **Compute cosine distance** between simulated focal and background frequencies
+6. **Count** how many simulated distances ≥ observed distance
+
+### 4. P-value Calculation
+The empirical P-value is calculated as:
+```
+P-value = (count of simulations with distance ≥ observed distance + 1) / (total simulations + 1)
+```
+
+This approach tests whether the observed focal region's codon usage is significantly different from what would be expected if we randomly selected the same amount of coding sequence from anywhere in the genome.
 
  <!---![figure](https://github.com/Kalan-Lab/codoff/blob/main/codoff_empirical_pvalue_image.png?raw=true) --->
 

@@ -84,11 +84,11 @@ The test suite is organized into the following categories:
 - **Key Test Classes**:
   - `TestProportionalSamplingDetailed`: Tests exact proportional sampling ratios, multiple genes, rounding behavior, and small gene sampling
 
-#### 4. Parallelization Tests (`test_parallelization.py`)
-- **Purpose**: Tests multiprocessing parallelization functionality
-- **Focus**: Parallel simulation execution and performance
+#### 4. antiSMASH Integration Tests (`test_antismash_codoff_integration.py`)
+- **Purpose**: Tests integration with antiSMASH and caching functionality
+- **Focus**: Data structure integrity, background calculations, and parameter handling
 - **Key Test Classes**:
-  - `TestParallelization`: Tests parallel vs sequential consistency, parameter handling, and performance
+  - `TestAntismashCodoffIntegration`: Tests caching data structure, background calculation methods, and function signatures
 
 #### 5. Warning System Tests (`test_warnings.py`)
 - **Purpose**: Tests warning messages and error handling
@@ -143,8 +143,8 @@ python -m unittest tests.test_integration
 # Run proportional sampling tests
 python -m unittest tests.test_proportional_sampling
 
-# Run parallelization tests
-python -m unittest tests.test_parallelization
+# Run antiSMASH integration tests
+python -m unittest tests.test_antismash_codoff_integration
 
 # Run warning system tests
 python -m unittest tests.test_warnings
@@ -170,7 +170,7 @@ When adding new tests, follow these guidelines:
    - Core algorithm tests → `test_codoff.py`
    - End-to-end workflow tests → `test_integration.py`
    - Sampling-specific tests → `test_proportional_sampling.py`
-   - Parallelization tests → `test_parallelization.py`
+   - processing antiSMASH results tests → `test_antismash_codoff_integration.py`
    - Warning/error tests → `test_warnings.py`
 
 2. **Test Naming**: Use descriptive test method names that explain what is being tested:
@@ -211,14 +211,14 @@ When adding new tests, follow these guidelines:
 - Use meaningful variable and function names
 - Add comprehensive docstrings for all public functions
 
-#### Parallelization Considerations
+#### Simulation Processing
 
-When working with the parallelization features:
+When working with simulation code:
 
-- **Default Behavior**: The tool defaults to sequential processing (`max_jobs=1`) for stability
-- **Multiprocessing**: Parallel processing is optional and must be explicitly enabled
-- **Testing**: Always test both sequential and parallel modes when modifying simulation code
-- **Performance**: Parallel processing provides significant speedup for large datasets
+- **Sequential Processing**: The tool uses sequential processing for all simulations for optimal performance
+- **Random Seeding**: Simulations use fixed random seeds (42) for reproducible results
+- **Testing**: Always test simulation consistency when modifying simulation code
+- **Performance**: Sequential processing provides better performance than parallel processing for this workload
 - **Compatibility**: Ensure changes work with both `codoff` and `antismash_codoff` scripts
 
 #### Code Organization
@@ -262,13 +262,13 @@ When adding new CLI parameters:
 
 ### Test Coverage
 
-The test suite provides comprehensive coverage with **22 tests** across 5 specialized modules:
-- Core algorithmic functionality (5 test classes)
+The test suite provides comprehensive coverage with **25 tests** across 6 specialized modules:
+- Core algorithmic functionality (6 test classes)
 - Edge cases and error conditions
 - Integration scenarios with realistic data
 - User-facing features and warnings
 - Statistical accuracy and precision
-- Parallelization functionality and performance
+- antiSMASH integration and caching functionality
 - Proportional sampling accuracy and edge cases
 
 ### Continuous Integration
@@ -285,7 +285,7 @@ All tests must pass before code can be merged.
 If you have questions about contributing or need help with the codebase:
 
 1. Check the existing issues on GitHub
-2. Review the test files for examples of how functionality is used
+2. Review the README.md and wiki for examples of how functionality is used
 3. Open a new issue with specific questions
 
 ## License

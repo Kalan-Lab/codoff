@@ -42,6 +42,9 @@ def create_parser():
 		help="Maximum number of parallel processes to use for each codoff simulation\n"
 			 "[Default: 1 (sequential)].", 
 		required=False, default=1)
+	parser.add_argument('--num-sims', type=int,
+		help="Number of simulations per BGC [Default: 10000]",
+		required=False, default=10000)
 
 	args = parser.parse_args()
 	return args
@@ -63,6 +66,7 @@ def main():
 	antismash_dir = os.path.abspath(myargs.antismash_dir) + '/'
 	output_dir = os.path.abspath(myargs.output_dir) + '/'
 	max_jobs = myargs.max_jobs
+	num_sims = myargs.num_sims
 
 	try:
 		assert(os.path.isdir(antismash_dir))
@@ -124,7 +128,8 @@ def main():
 				outfile=bgc_outfile,
 				plot_outfile=bgc_plotfile,
 				verbose=False,
-				max_jobs=max_jobs)
+				max_jobs=max_jobs,
+				num_sims=num_sims)
 			msg = 'Successfully ran codoff for %s.' % bgc_gbk_name
 			sys.stdout.write(msg + '\n')
 		except:

@@ -42,6 +42,7 @@ def create_parser():
 	   Example command: 
 									 
 	   $ codoff -f Sw_LK413/NZ_JALXLO020000001.1.region001.gbk -g Sw_LK413/LK413.gbk
+	   $ codoff -f region.gbk -g genome.gbk --num-sims 5000
 									 
 	2. (WORKS ONLY FOR BACTERIA) Full genome is provided as a FASTA or GenBank 
 	   file. If CDS features are missing gene calling is performed using 
@@ -50,7 +51,8 @@ def create_parser():
 	
 	   Example command:
 									 
-	   $ codoff -s NZ_JALXLO020000001.1 -a 341425 -b 388343 -g Sw_LK413/LK413.fna 
+	   $ codoff -s NZ_JALXLO020000001.1 -a 341425 -b 388343 -g Sw_LK413/LK413.fna
+	   $ codoff -s scaffold -a 1000 -b 5000 -g genome.fna --num-sims 20000 
  
 	""", formatter_class=argparse.RawTextHelpFormatter)
 
@@ -78,10 +80,9 @@ def create_parser():
 		help="Plot output file name (will be in SVG format). If not provided, no\n"
 			 "plot will be made.", 
 		required=False, default=None)
-	parser.add_argument('-j', '--max-jobs', type=int, 
-		help="Maximum number of parallel processes to use for simulation [Default:\n"
-			 "1 (sequential)].", 
-		required=False, default=None)
+	parser.add_argument('--num-sims', type=int,
+		help="Number of simulations to run [Default: 10000]",
+		required=False, default=10000)
 	parser.add_argument('-v', '--version', action='store_true', 
 		help="Print version and exist", 
 		required=False, default=False)
@@ -110,7 +111,7 @@ def main():
 	focal_genbank_files = myargs.focal_genbanks
 	outfile = myargs.outfile
 	plot_outfile = myargs.plot_outfile
-	max_jobs = myargs.max_jobs
+	num_sims = myargs.num_sims
 
 	"""
 	START WORKFLOW
@@ -123,7 +124,7 @@ def main():
 			outfile=outfile,
 			plot_outfile=plot_outfile,
 			verbose=True,
-			max_jobs=max_jobs
+			num_sims=num_sims
 		)
 	elif focal_scaffold != None and focal_start_coord != None and focal_end_coord != None:
 		codoff.codoff_main_coords(
@@ -134,7 +135,7 @@ def main():
 			outfile=outfile,
 			plot_outfile=plot_outfile,
 			verbose=True,
-			max_jobs=max_jobs
+			num_sims=num_sims
 		)
 	else:
 		sys.stderr.write('Error: Insuffient input provided!\n')

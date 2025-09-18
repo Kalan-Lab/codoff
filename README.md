@@ -81,9 +81,6 @@ Here, we also requested the `-p` argument to generate a plot of the simulated di
 
 ![figure](https://raw.githubusercontent.com/Kalan-Lab/codoff/main/codoff_actual_empirical_pvalue_image.svg)
 
-> [!NOTE]
-> P-values determined from simulations should be deterministic between runs using the same number of threads/processes but slight differences might arise betwen runs using non-exact commands.
-
 ### Detailed example with interpretation
 
 A more detailed example on how homologous instances of the same five-gene operon differ in codon usage between an instance on the plasmid and chromosome can be found on the wiki: [Examples of inferring codon usage for the *crt* operon in a chromosomal and plasmid context](https://github.com/Kalan-Lab/codoff/wiki/Examples-of-inferring-codon-usage-differences-for-the-crt-operon-in-a-chromosomal-and-plasmid-context)
@@ -101,40 +98,50 @@ Beginning in v1.2.0, codoff can also be used as a function in your Python code. 
 ## Commandline usage 
 
 ```
-usage: codoff [-h] -g FULL_GENOME [-s SCAFFOLD] [-a START_COORD] [-b END_COORD] [-f FOCAL_GENBANKS [FOCAL_GENBANKS ...]] [-o OUTFILE] [-p PLOT_OUTFILE] [-j MAX_JOBS] [-v]
+Running version 1.2.2 of codoff!
+usage: codoff [-h] -g FULL_GENOME [-s SCAFFOLD] [-a START_COORD] [-b END_COORD] [-f FOCAL_GENBANKS [FOCAL_GENBANKS ...]] [-o OUTFILE] [-p PLOT_OUTFILE] [--num-sims NUM_SIMS] [-v]
 
 	Program: codoff
 	Author: Rauf Salamzade
-	Affiliation: Kalan Lab, UW Madison, Department of Medical Microbiology and Immunology
+	Affiliation: Kalan Lab, UW Madison
 
-	This program compares the codon-usage distribution of a focal-region/BGC to the codon usage of
-	the background genome. It will report the cosine distance and Spearman correlation between the
-	two profiles, as well as an empirical P-value for whether the codon usage is siginficantly different
-	between the focal region and background genome. Only CDS features which are of length divisible
-	by 3 will be considered.
+	This program compares the codon-usage distribution of a focal-region/BGC
+	to the codon usage of the background genome. It will report the cosine
+	distance and Spearman correlation between the two profiles, as well as
+	an empirical P-value for whether the codon usage is siginficantly
+	different between the focal region and background genome. Only CDS
+	features which are of length divisible by 3 will be considered.
 
 	Two modes of input are supported:
 
-	1. (WORKS FOR BOTH EUKARYOTES & BACTERIA) Focal region and full-genome provided as GenBank files with
-	   CDS features (compatible with antiSMASH outputs). Multiple focal region GenBank files can be provided,
-	   e.g. consider a biosynthetic gene cluster split across multiple scaffolds due to assembly fragmentation.
+	1. (WORKS FOR BOTH EUKARYOTES & BACTERIA) Focal region and full-genome
+	   provided as GenBank files with CDS features (compatible with
+	   antiSMASH outputs). Multiple focal region GenBank files can be provided,
+	   e.g. consider a biosynthetic gene cluster split across multiple
+	   scaffolds due to assembly fragmentation.
 
 	   Example command:
 
 	   $ codoff -f Sw_LK413/NZ_JALXLO020000001.1.region001.gbk -g Sw_LK413/LK413.gbk
+	   $ codoff -f region.gbk -g genome.gbk --num-sims 5000
 
-	2. (WORKS ONLY FOR BACTERIA) Full genome is provided as a FASTA or GenBank file. If CDS features are missing
-	   gene calling is performed using pyrodigal. Afterwards, the focal region is determined through user
+	2. (WORKS ONLY FOR BACTERIA) Full genome is provided as a FASTA or GenBank
+	   file. If CDS features are missing gene calling is performed using
+	   pyrodigal. Afterwards, the focal region is determined through user
 	   speciefied coordinates.
 
 	   Example command:
 
 	   $ codoff -s NZ_JALXLO020000001.1 -a 341425 -b 388343 -g Sw_LK413/LK413.fna
+	   $ codoff -s scaffold -a 1000 -b 5000 -g genome.fna --num-sims 20000
+
+
 
 options:
   -h, --help            show this help message and exit
   -g FULL_GENOME, --full-genome FULL_GENOME
-                        Path to a full-genome in GenBank or FASTA format. If GenBank file provided, CDS features are required.
+                        Path to a full-genome in GenBank or FASTA format. If GenBank file
+                        provided, CDS features are required.
   -s SCAFFOLD, --scaffold SCAFFOLD
                         Scaffold identifier for focal region.
   -a START_COORD, --start-coord START_COORD
@@ -142,13 +149,14 @@ options:
   -b END_COORD, --end-coord END_COORD
                         End coordinate for focal region.
   -f FOCAL_GENBANKS [FOCAL_GENBANKS ...], --focal-genbanks FOCAL_GENBANKS [FOCAL_GENBANKS ...]
-                        Path to focal region GenBank(s) for isolate. Locus tags must match with tags in full-genome GenBank.
+                        Path to focal region GenBank(s) for isolate. Locus tags must match
+                        with tags in full-genome GenBank.
   -o OUTFILE, --outfile OUTFILE
                         Path to output file [Default is standard output].
   -p PLOT_OUTFILE, --plot-outfile PLOT_OUTFILE
-                        Plot output file name (will be in SVG format). If not provided, no plot will be made.
-  -j MAX_JOBS, --max-jobs MAX_JOBS
-                        Maximum number of parallel processes to use for simulation [Default: 1 (sequential)].
+                        Plot output file name (will be in SVG format). If not provided, no
+                        plot will be made.
+  --num-sims NUM_SIMS   Number of simulations to run [Default: 10000]
   -v, --version         Print version and exist
 ```
 

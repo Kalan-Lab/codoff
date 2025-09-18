@@ -40,7 +40,7 @@ class TestProportionalSamplingDetailed(unittest.TestCase):
         result = _stat_calc_and_simulation(
             all_cods, cod_freq_dict_focal, cod_freq_dict_background,
             gene_list, gene_codons, foc_codon_count, all_codon_counts,
-            outfile=None, plot_outfile=None, verbose=False, max_jobs=1
+            outfile=None, plot_outfile=None, verbose=False
         )
         
         # Check that we got the original observed codon counts (not simulated)

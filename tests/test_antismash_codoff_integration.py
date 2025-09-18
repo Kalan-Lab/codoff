@@ -25,12 +25,10 @@ class TestAntismashCodoffIntegration(unittest.TestCase):
         # Check that new parameters are present
         self.assertIn('genome_data', sig.parameters)
         self.assertIn('num_sims', sig.parameters)
-        self.assertIn('max_jobs', sig.parameters)
         
         # Check default values
         self.assertEqual(sig.parameters['genome_data'].default, None)
         self.assertEqual(sig.parameters['num_sims'].default, 10000)
-        self.assertEqual(sig.parameters['max_jobs'].default, None)
     
     def test_caching_data_structure_integrity(self):
         """Test that the caching preserves data structure integrity"""

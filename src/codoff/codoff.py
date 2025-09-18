@@ -16,7 +16,7 @@ import math
 import traceback
 from collections import defaultdict
 from operator import itemgetter
-from typing import Dict, Any
+from typing import Dict, Any, Optional, List, Set
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -159,7 +159,7 @@ def extract_genome_codon_data(full_genome_file: str,
     }
 
 
-def process_bgc_with_cached_data(genome_data, focal_genbank_files, outfile=None, plot_outfile=None, verbose=True, max_jobs=None, num_sims=10000):
+def process_bgc_with_cached_data(genome_data: Dict[str, Any], focal_genbank_files: List[str], outfile: Optional[str] = None, plot_outfile: Optional[str] = None, verbose: bool = True, num_sims: int = 10000) -> Dict[str, Any]:
     """
     Process BGC regions using pre-computed genome data to avoid redundant computation.
     
@@ -177,8 +177,6 @@ def process_bgc_with_cached_data(genome_data, focal_genbank_files, outfile=None,
         be made.
     verbose : bool
         Whether to print progress messages to stderr. Default is True.
-    max_jobs : int
-        Ignored. Kept for compatibility. Simulations now run sequentially only.
     
     Returns
     -------
@@ -294,11 +292,11 @@ def process_bgc_with_cached_data(genome_data, focal_genbank_files, outfile=None,
         sys.exit(1)
 
     # Run rest of codoff using pre-computed data
-    result = _stat_calc_and_simulation(all_cods, cod_freq_dict_focal, cod_freq_dict_background, gene_list, gene_codons, foc_codon_count, all_codon_counts, outfile=outfile, plot_outfile=plot_outfile, verbose=verbose, max_jobs=max_jobs, num_sims=num_sims)
+    result = _stat_calc_and_simulation(all_cods, cod_freq_dict_focal, cod_freq_dict_background, gene_list, gene_codons, foc_codon_count, all_codon_counts, outfile=outfile, plot_outfile=plot_outfile, verbose=verbose,  num_sims=num_sims)
     return result
 
 
-def codoff_main_gbk(full_genome_file, focal_genbank_files, outfile=None, plot_outfile=None, verbose=True, max_jobs=None, genome_data=None, num_sims=10000):
+def codoff_main_gbk(full_genome_file: str, focal_genbank_files: List[str], outfile: Optional[str] = None, plot_outfile: Optional[str] = None, verbose: bool = True, genome_data: Optional[Dict[str, Any]] = None, num_sims: int = 10000) -> Dict[str, Any]:
     """
     A full genome and a specific region must each be provided in 
     GenBank format, with locus_tags overlapping. locus_tags in the
@@ -322,8 +320,6 @@ def codoff_main_gbk(full_genome_file, focal_genbank_files, outfile=None, plot_ou
         be made.
     * verbose: bool
         Whether to print progress messages to stderr. Default is True.
-    * max_jobs: int
-        Ignored. Kept for compatibility. Simulations now run sequentially only.
     * genome_data: dict, optional
         Pre-computed genome data from extract_genome_codon_data() to avoid 
         redundant computation. If provided, full_genome_file will be ignored.
@@ -331,7 +327,7 @@ def codoff_main_gbk(full_genome_file, focal_genbank_files, outfile=None, plot_ou
     
     # If genome_data is provided, use it instead of processing the full_genome_file
     if genome_data is not None:
-        return process_bgc_with_cached_data(genome_data, focal_genbank_files, outfile, plot_outfile, verbose, max_jobs, num_sims)
+        return process_bgc_with_cached_data(genome_data, focal_genbank_files, outfile, plot_outfile, verbose, num_sims)
     
     try:
         assert check_data_type(full_genome_file, str)
@@ -498,11 +494,11 @@ def codoff_main_gbk(full_genome_file, focal_genbank_files, outfile=None, plot_ou
 
     # run rest of codoff (separate function to avoid redundancy between codoff_main_gbk() and codoff_main_coords()
     # Use all genes for simulation pool to match v1.2.1 behavior
-    result = _stat_calc_and_simulation(all_cods, cod_freq_dict_focal, cod_freq_dict_background, gene_list, gene_codons, foc_codon_count, all_codon_counts, outfile=outfile, plot_outfile=plot_outfile, verbose=verbose, max_jobs=max_jobs, num_sims=num_sims)
+    result = _stat_calc_and_simulation(all_cods, cod_freq_dict_focal, cod_freq_dict_background, gene_list, gene_codons, foc_codon_count, all_codon_counts, outfile=outfile, plot_outfile=plot_outfile, verbose=verbose,  num_sims=num_sims)
     return result
 
 
-def codoff_main_coords(full_genome_file, focal_scaffold, focal_start_coord, focal_end_coord, outfile=None, plot_outfile=None, verbose=True, max_jobs=None, num_sims=10000):
+def codoff_main_coords(full_genome_file: str, focal_scaffold: str, focal_start_coord: int, focal_end_coord: int, outfile: Optional[str] = None, plot_outfile: Optional[str] = None, verbose: bool = True, num_sims: int = 10000) -> Dict[str, Any]:
     """
     A full genome file can be provided in either GenBank or FASTA 
     format. If the latter, pyrodigal is used for gene calling, 
@@ -738,18 +734,13 @@ def codoff_main_coords(full_genome_file, focal_scaffold, focal_start_coord, foca
         
         # run rest of codoff (separate function to avoid redundancy between codoff_main_gbk() and codoff_main_coords()
         # Use all genes for simulation pool to match v1.2.1 behavior
-        result = _stat_calc_and_simulation(all_cods, cod_freq_dict_focal, cod_freq_dict_background, gene_list, gene_codons, foc_codon_count, all_codon_counts, outfile=outfile, plot_outfile=plot_outfile, verbose=verbose, max_jobs=max_jobs, num_sims=num_sims)
+        result = _stat_calc_and_simulation(all_cods, cod_freq_dict_focal, cod_freq_dict_background, gene_list, gene_codons, foc_codon_count, all_codon_counts, outfile=outfile, plot_outfile=plot_outfile, verbose=verbose,  num_sims=num_sims)
         return result
     
     
-def _stat_calc_and_simulation(all_cods, cod_freq_dict_focal, cod_freq_dict_background, gene_list, gene_codons, foc_codon_count, all_codon_counts, outfile=None, plot_outfile=None, verbose=True, max_jobs=None, num_sims=10000):
+def _stat_calc_and_simulation(all_cods: Set[str], cod_freq_dict_focal: Dict[str, int], cod_freq_dict_background: Dict[str, int], gene_list: List[str], gene_codons: Dict[str, Dict[str, int]], foc_codon_count: int, all_codon_counts: Dict[str, int], outfile: Optional[str] = None, plot_outfile: Optional[str] = None, verbose: bool = True, num_sims: int = 10000) -> Dict[str, Any]:
     """
     Private function that performs the main statistical calculations and Monte Carlo simulations.
-    
-    Parameters
-    ----------
-    max_jobs : int
-        Ignored. Kept for compatibility. Simulations now run sequentially only.
     
     SIMULATION LOGIC:
     The simulation uses ALL genes from the genome (both focal and background genes) as the sampling pool.

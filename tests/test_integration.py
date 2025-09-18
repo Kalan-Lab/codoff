@@ -79,7 +79,7 @@ class TestIntegrationWorkflow(unittest.TestCase):
         result = _stat_calc_and_simulation(
             all_cods, cod_freq_dict_focal, cod_freq_dict_background,
             gene_list, gene_codons, foc_codon_count, all_codon_counts,
-            outfile=None, plot_outfile=None, verbose=False, max_jobs=1
+            outfile=None, plot_outfile=None, verbose=False
         )
         
         # Verify results
@@ -154,7 +154,7 @@ class TestIntegrationWorkflow(unittest.TestCase):
         result = _stat_calc_and_simulation(
             all_cods, cod_freq_dict_focal, cod_freq_dict_background,
             gene_list, gene_codons, foc_codon_count, all_codon_counts,
-            outfile=None, plot_outfile=None, verbose=False, max_jobs=1
+            outfile=None, plot_outfile=None, verbose=False
         )
         
         end_time = time.time()
@@ -192,7 +192,7 @@ class TestIntegrationWorkflow(unittest.TestCase):
                 _stat_calc_and_simulation(
                     all_cods, cod_freq_dict_focal, cod_freq_dict_background,
                     gene_list, gene_codons, foc_codon_count, all_codon_counts,
-                    outfile=None, plot_outfile=None, verbose=False, max_jobs=1
+                    outfile=None, plot_outfile=None, verbose=False
                 )
     
     def test_edge_case_single_gene(self):
@@ -214,7 +214,7 @@ class TestIntegrationWorkflow(unittest.TestCase):
         result = _stat_calc_and_simulation(
             all_cods, cod_freq_dict_focal, cod_freq_dict_background,
             gene_list, gene_codons, foc_codon_count, all_codon_counts,
-            outfile=None, plot_outfile=None, verbose=False, max_jobs=1
+            outfile=None, plot_outfile=None, verbose=False
         )
         
         # Verify results

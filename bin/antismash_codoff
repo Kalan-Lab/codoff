@@ -6,6 +6,8 @@ warnings.filterwarnings("ignore", category=DeprecationWarning)
 import os
 import sys
 import argparse
+# Add src to path to import codoff
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 from codoff import codoff
 import importlib.metadata
 import traceback
@@ -38,9 +40,15 @@ def create_parser():
 	parser.add_argument('-v', '--version', action='store_true', 
 		help="Print version and exist", 
 		required=False, default=False)
-	parser.add_argument('--num-sims', type=int,
-		help="Number of simulations per BGC [Default: 10000]",
+	parser.add_argument('-ns', '--num-sims', type=int,
+		help="Number of simulations per BGC [Default: 10000].",
 		required=False, default=10000)
+	parser.add_argument('-r', '--random-sampling', action='store_true',
+		help="Create null distribution of randomly sampled genes irrespective\nof their genomic position. Legacy option - to match\nresults from <=v1.2.2.",
+		required=False, default=False)
+	parser.add_argument('-x', '--seed', type=int,
+		help="Random seed for reproducible results [Default: 42].",
+		required=False, default=42)
 
 	args = parser.parse_args()
 	return args
@@ -62,6 +70,9 @@ def main():
 	antismash_dir = os.path.abspath(myargs.antismash_dir) + '/'
 	output_dir = os.path.abspath(myargs.output_dir) + '/'
 	num_sims = myargs.num_sims
+	proportional_sampling = myargs.random_sampling
+	sequential_sampling = not proportional_sampling
+	seed = myargs.seed
 
 	try:
 		assert(os.path.isdir(antismash_dir))
@@ -118,12 +129,17 @@ def main():
 		bgc_plotfile = output_dir + bgc_gbk_name + '.svg'
 		
 		try:
-			codoff.process_bgc_with_cached_data(genome_data=genome_data,
+			codoff.codoff_main_gbk(
+				full_genome_file=genome_gbk,
 				focal_genbank_files=[bgc_gbk],
 				outfile=bgc_outfile,
 				plot_outfile=bgc_plotfile,
 				verbose=False,
-				num_sims=num_sims)
+				num_sims=num_sims,
+				sequential_sampling=sequential_sampling,
+				genome_data=genome_data,
+				seed=seed
+			)
 			msg = 'Successfully ran codoff for %s.' % bgc_gbk_name
 			sys.stdout.write(msg + '\n')
 		except:

@@ -54,11 +54,11 @@ pip install -e .
 
 ## Example commands
 
-Uncompress the example inputs (trimmed down to save space) from this git repo for *Staphylococcus warneri* st. 413:
+Uncompress the example inputs (trimmed down to save space). The input includes: (1) BGC predictions and (2) the genome of a *Corynebacterium simulans* isolate that we previously reported to feature a non-ribosomal peptide synthase that synthesizes a metallophore in the *lsa*BGC manuscript. Expected results from using v1.2.3 of codoff are also included. 
 
-```
-# within codoff git repo
-tar -zxvf Sw_LK413.tar.gz
+```bash
+# within codoff git repo, uncompress the input data
+tar -zxvf Csimulans_Data.tar.gz
 ```
 
 ### Example 1: Providing focal region and genome-wide GenBank files as input (e.g. based on antiSMASH outputs)
@@ -66,24 +66,27 @@ tar -zxvf Sw_LK413.tar.gz
 (WORKS FOR BOTH EUKARYOTES & BACTERIA) Focal region and full-genome provided as GenBank files with CDS features (compatible with antiSMASH outputs). Multiple focal region GenBank files can be provided, e.g. consider a biosynthetic gene cluster split across multiple scaffolds due to assembly fragmentation. 
 
 ```bash
-codoff -f Sw_LK413/NZ_JALXLO020000001.1.region001.gbk -g Sw_LK413/LK413.gbk
+codoff -f Csimulans_Data/Coryne_simulans_PES1/NZ_CP014634.1.region001.gbk -g Csimulans_Data/Coryne_simulans_PES1/Coryne_simulans_PES1.gbk
 ```
+
+> [!NOTE]
+> As of v1.2.3, this uses sequential contiguous-window sampling by default, which provides a more biologically realistic null model by comparing against randomly positioned genomic regions of the same size.
 
 ### Example 2: Providing a genome-wide FASTA file and coordinates of a focal region
 
 (WORKS ONLY FOR BACTERIA) Full genome is provided as a FASTA or GenBank file. If CDS features are missing, gene calling is performed using [pyrodigal](https://github.com/althonos/pyrodigal). Afterwards, the focal region is determined through user speciefied coordinates.
 
 ```bash
- codoff -s NZ_JALXLO020000001.1 -a 341425 -b 388343 -g Sw_LK413/LK413.fna -p example_plot.svg
+ codoff -s NZ_CP014634.1 -a 1380553 -b 1432929 -g Csimulans_Data/Coryne_simulans_PES1/Coryne_simulans_PES1.gbk -p coordinate_example_plot.svg
 ```
 
 Here, we also requested the `-p` argument to generate a plot of the simulated distribution of cosine distances for regions of similar size to the focal region and the actual cosine distance for the focal region/cluster (blue vertical line):
 
-![figure](https://raw.githubusercontent.com/Kalan-Lab/codoff/main/codoff_actual_empirical_pvalue_image.svg)
+![figure](https://raw.githubusercontent.com/Kalan-Lab/codoff/main/images/NZ_CP014634.1.region001.svg)
 
 ### Detailed example with interpretation
 
-A more detailed example on how homologous instances of the same five-gene operon differ in codon usage between an instance on the plasmid and chromosome can be found on the wiki: [Examples of inferring codon usage for the *crt* operon in a chromosomal and plasmid context](https://github.com/Kalan-Lab/codoff/wiki/Examples-of-inferring-codon-usage-differences-for-the-crt-operon-in-a-chromosomal-and-plasmid-context)
+A more detailed example on how homologous instances of the same five-gene operon differ in codon usage between an instance on the plasmid and chromosome can be found on the wiki: [Examples of inferring codon usage for the *crt* operon in a chromosomal and plasmid context](https://github.com/Kalan-Lab/codoff/wiki/Investigating-BGCs-from-Corynebacterium-simulans)
 
 ## Algorithm for computing empirical P-value
 
@@ -100,13 +103,40 @@ codoff uses a Monte Carlo simulation approach to calculate an empirical P-value 
 - Calculate Spearman correlation coefficient between the two distributions
 
 ### 3. Monte Carlo Simulation
+
+**As of v1.2.3, codoff uses sequential sampling by default**, which better preserves the spatial structure of the genome.
+
+#### Default: Sequential Sampling
+The default sequential sampling method has two variants depending on data availability:
+
+**When region coordinates are available** (e.g., using `-f` with GenBank files containing genomic coordinates, or using `-s/-a/-b` coordinate mode):
+
 For each of N simulations (default: 10,000, configurable with `--num-sims`):
-1. **Shuffle** the complete list of all genes in the genome
-2. **Select genes sequentially** from the shuffled list until accumulating the same number of codons as in the actual focal region
-3. **Calculate codon frequencies** for this simulated "focal" region
-4. **Calculate background frequencies** as: `total_genome_counts - simulated_focal_counts`
-5. **Compute cosine distance** between simulated focal and background frequencies
-6. **Count** how many simulated distances ≥ observed distance
+1. Randomly select a scaffold from those large enough to contain the focal region size
+2. Randomly select a starting coordinate on that scaffold
+3. Extract all genes fully contained within a contiguous genomic window of the same size as the focal region
+4. Calculate codon frequencies for genes in this simulated window
+5. Skip windows with no genes or with ≥5% of total genome CDS (to match filtering applied to real data)
+6. Calculate background frequencies as: `total_genome_counts - simulated_focal_counts`
+7. Compute cosine distance between simulated focal and background frequencies
+8. Count how many simulated distances ≥ observed distance
+
+This approach tests whether the observed focal region's codon usage is significantly different from what would be expected for a randomly positioned contiguous genomic region of the same size.
+
+**(fallback method) When region coordinates are unavailable** (e.g., if GenBank files lack proper feature locations or coordinate information is missing):
+
+For each of N simulations:
+1. Shuffle the complete list of all genes in the genome
+2. Select genes sequentially from the shuffled list until accumulating the same number of codons as in the actual focal region
+3. Calculate codon frequencies for this simulated "focal" region
+4. Calculate background frequencies as: `total_genome_counts - simulated_focal_counts`
+5. Compute cosine distance between simulated focal and background frequencies
+6. Count how many simulated distances ≥ observed distance
+
+This fallback approach tests whether the observed focal region's codon usage is different from a random selection of genes with the same total codon count. The output will be labeled as **"Random Sampling"**.
+
+#### Legacy Mode (Optional, via `-r`/`--random-sampling` flag)
+The `-r` flag provides backward compatibility with v1.2.2 and earlier by disabling the contiguous-window sampling behavior. When `-r` is used, codoff will always use the gene-based random sampling method described above (shuffle genes and select sequentially), even if region coordinates are available. The underlying algorithm and output label (**"Random Sampling"**) are identical to the fallback method.
 
 ### 4. P-value Calculation
 The empirical P-value is calculated as:
@@ -114,7 +144,8 @@ The empirical P-value is calculated as:
 P-value = (count of simulations with distance ≥ observed distance + 1) / (total simulations + 1)
 ```
 
-This approach tests whether the observed focal region's codon usage is significantly different from what would be expected if we randomly selected the same amount of coding sequence from anywhere in the genome.
+### 5. Reproducibility
+Results can be reproduced exactly using the `--seed/-x` parameter (default: 42). Using the same seed value will produce identical results across multiple runs.
 
  <!---![figure](https://github.com/Kalan-Lab/codoff/blob/main/codoff_empirical_pvalue_image.png?raw=true) --->
 
@@ -125,8 +156,7 @@ Beginning in v1.2.0, codoff can also be used as a function in your Python code. 
 ## Commandline usage 
 
 ```
-Running version 1.2.2 of codoff!
-usage: codoff [-h] -g FULL_GENOME [-s SCAFFOLD] [-a START_COORD] [-b END_COORD] [-f FOCAL_GENBANKS [FOCAL_GENBANKS ...]] [-o OUTFILE] [-p PLOT_OUTFILE] [--num-sims NUM_SIMS] [-v]
+usage: codoff [-h] -g FULL_GENOME [-s SCAFFOLD] [-a START_COORD] [-b END_COORD] [-f FOCAL_GENBANKS [FOCAL_GENBANKS ...]] [-o OUTFILE] [-p PLOT_OUTFILE] [-ns NUM_SIMS] [-r] [-v] [-x SEED]
 
 	Program: codoff
 	Author: Rauf Salamzade
@@ -183,8 +213,14 @@ options:
   -p PLOT_OUTFILE, --plot-outfile PLOT_OUTFILE
                         Plot output file name (will be in SVG format). If not provided, no
                         plot will be made.
-  --num-sims NUM_SIMS   Number of simulations to run [Default: 10000]
+  -ns NUM_SIMS, --num-sims NUM_SIMS
+                        Number of simulations to run [Default: 10000].
+  -r, --random-sampling
+                        Create null distribution of randomly sampled genes irrespective
+                        of their genomic position. Legacy option - to match
+                        results from <=v1.2.2.
   -v, --version         Print version and exist
+  -x SEED, --seed SEED  Random seed for reproducible results [Default: 42].
 ```
 
 ## License

@@ -12,6 +12,7 @@ from typing import List, Tuple, Set, Dict
 
 from Bio import SeqIO
 from Bio.Seq import Seq
+from Bio.SeqFeature import FeatureLocation
 import pyrodigal
 
 
@@ -53,92 +54,44 @@ def print_progress_bar(iteration: int, total: int, prefix: str = '',
         sys.stderr.write('\n')
 
 
-def parse_cds_coord(str_gbk_loc: str) -> Tuple[List[List[int]], int, int, str, bool]:
+def parse_cds_coord(location: FeatureLocation) -> Tuple[List[List[int]], int, int, str, bool]:
     """
-    Parse GenBank CDS coordinate string to extract start, end, direction.
+    Parse a Biopython FeatureLocation object to extract start, end, and strand.
+    
+    This function replaces manual string parsing with direct use of Biopython's
+    object attributes for robustness, especially with multi-exon eukaryotic features.
     
     Parameters
     ----------
-    str_gbk_loc : str
-        GenBank location string (e.g., "complement(123..456)")
+    location : FeatureLocation
+        Biopython FeatureLocation object from a SeqFeature.
     
     Returns
     -------
     Tuple[List[List[int]], int, int, str, bool]
         Tuple containing:
         - all_coords: List of [start, end, direction] for each exon
-        - start: Minimum start coordinate
-        - end: Maximum end coordinate  
+        - start: Minimum start coordinate (1-based)
+        - end: Maximum end coordinate
         - direction: Strand direction ('+' or '-')
         - is_multi_part: Whether the CDS spans multiple exons
     """
     try:
-        start = None
-        end = None
-        direction = None
         all_coords = []
-        is_multi_part = False
+        is_multi_part = len(location.parts) > 1
+
+        # Overall direction and bounds
+        direction = '+' if location.strand >= 0 else '-'
+        start = int(location.start) + 1  # Convert from 0-based to 1-based
+        end = int(location.end)
         
-        if not ('join' in str(str_gbk_loc) or 'order' in str(str_gbk_loc)):
-            # Single exon case
-            coords_str = str(str_gbk_loc)[1:].split(']')[0]
-            coords = [int(x.strip('>').strip('<')) for x in coords_str.split(':')]
-            start = min(coords) + 1
-            end = max(coords)
-            direction = str(str_gbk_loc).split('(')[1].split(')')[0]
-            all_coords.append([start, end, direction])
-            
-        elif 'order' in str(str_gbk_loc):
-            # Multi-exon case with order
-            is_multi_part = True
-            all_starts = []
-            all_ends = []
-            all_directions = []
-            
-            coords_str = str(str_gbk_loc)[6:-1]  # Remove 'order(' and ')'
-            for exon_coord in coords_str.split(', '):
-                ec_coords_str = exon_coord[1:].split(']')[0]
-                ec_coords = [int(x.strip('>').strip('<')) 
-                            for x in ec_coords_str.split(':')]
-                ec_start = min(ec_coords) + 1
-                ec_end = max(ec_coords)
-                ec_direction = exon_coord.split('(')[1].split(')')[0]
-                
-                all_starts.append(ec_start)
-                all_ends.append(ec_end)
-                all_directions.append(ec_direction)
-                all_coords.append([ec_start, ec_end, ec_direction])
-            
-            assert len(set(all_directions)) == 1
-            start = min(all_starts)
-            end = max(all_ends)
-            direction = all_directions[0]
-            
+        # Handle compound locations (e.g., joins for exons)
+        if is_multi_part:
+            for part in location.parts:
+                part_direction = '+' if part.strand >= 0 else '-'
+                all_coords.append([int(part.start) + 1, int(part.end), part_direction])
         else:
-            # Multi-exon case with join
-            is_multi_part = True
-            all_starts = []
-            all_ends = []
-            all_directions = []
-            
-            coords_str = str(str_gbk_loc)[5:-1]  # Remove 'join(' and ')'
-            for exon_coord in coords_str.split(', '):
-                ec_coords_str = exon_coord[1:].split(']')[0]
-                ec_coords = [int(x.strip('>').strip('<')) 
-                            for x in ec_coords_str.split(':')]
-                ec_start = min(ec_coords) + 1
-                ec_end = max(ec_coords)
-                ec_direction = exon_coord.split('(')[1].split(')')[0]
-                
-                all_starts.append(ec_start)
-                all_ends.append(ec_end)
-                all_directions.append(ec_direction)
-                all_coords.append([ec_start, ec_end, ec_direction])
-            
-            assert len(set(all_directions)) == 1
-            start = min(all_starts)
-            end = max(all_ends)
-            direction = all_directions[0]
+            all_coords.append([start, end, direction])
             
         return all_coords, start, end, direction, is_multi_part
         
@@ -149,7 +102,7 @@ def parse_cds_coord(str_gbk_loc: str) -> Tuple[List[List[int]], int, int, str, b
 
 
 def gene_call_using_pyrodigal(genome_fasta_file: str, focal_scaffold: str, 
-                             focal_start_coord: int, focal_end_coord: int) -> Tuple[Dict[str, str], Set[str]]:
+                             focal_start_coord: int, focal_end_coord: int) -> Tuple[Dict[str, str], Set[str], Dict[str, Tuple[str, int, int]]]:
     """
     Perform gene calling using pyrodigal on a FASTA file.
     
@@ -166,13 +119,15 @@ def gene_call_using_pyrodigal(genome_fasta_file: str, focal_scaffold: str,
     
     Returns
     -------
-    Tuple[Dict[str, str], Set[str]]
+    Tuple[Dict[str, str], Set[str], Dict[str, Tuple[str, int, int]]]
         Tuple containing:
         - locus_tag_sequences: Dictionary mapping locus tags to sequences
         - focal_lts: Set of locus tags in the focal region
+        - gene_coords: Dictionary mapping locus tags to (scaffold, start, end)
     """
     locus_tag_sequences = {}
     focal_lts = set()
+    gene_coords = {}
     
     try:
         # Read all sequences and concatenate with spacers
@@ -207,6 +162,7 @@ def gene_call_using_pyrodigal(genome_fasta_file: str, focal_scaffold: str,
                     
                     locus_tag_name = 'CDS_' + str(locus_tag_id)
                     locus_tag_sequences[locus_tag_name] = gene_seq
+                    gene_coords[locus_tag_name] = (scaffold, start_coord, end_coord)
                     
                     # Check if gene is in focal region
                     if (scaffold == focal_scaffold and 
@@ -221,7 +177,7 @@ def gene_call_using_pyrodigal(genome_fasta_file: str, focal_scaffold: str,
         sys.stderr.write(traceback.format_exc() + '\n')
         sys.exit(1)
     
-    return locus_tag_sequences, focal_lts
+    return locus_tag_sequences, focal_lts, gene_coords
 
 
 def check_is_genbank_with_cds(gbk_file: str) -> bool:
@@ -289,9 +245,112 @@ def confirm_fasta(fasta_file: str) -> bool:
         sys.exit(1)
 
 
+def calculate_n50(scaffold_lengths: List[int]) -> int:
+    """
+    Calculate the N50 statistic for an assembly.
+    
+    N50 is defined as the sequence length of the shortest contig at 50% of the 
+    total genome length.
+    
+    Parameters
+    ----------
+    scaffold_lengths : List[int]
+        List of scaffold/contig lengths
+    
+    Returns
+    -------
+    int
+        The N50 value
+    """
+    if not scaffold_lengths:
+        return 0
+    
+    sorted_lengths = sorted(scaffold_lengths, reverse=True)
+    total_length = sum(sorted_lengths)
+    target_length = total_length / 2
+    
+    cumulative_length = 0
+    for length in sorted_lengths:
+        cumulative_length += length
+        if cumulative_length >= target_length:
+            return length
+    
+    return sorted_lengths[-1]
+
+
+def check_assembly_quality(genome_file: str, focal_region_size: int, 
+                           verbose: bool = True) -> None:
+    """
+    Check if the assembly N50 is larger than the focal region size.
+    
+    If the N50 is smaller than or equal to the focal region size, this indicates
+    the assembly is too fragmented for reliable analysis and an error is raised.
+    
+    Parameters
+    ----------
+    genome_file : str
+        Path to the genome file (GenBank or FASTA)
+    focal_region_size : int
+        Size of the focal region in base pairs
+    verbose : bool, optional
+        Whether to print progress messages, by default True
+    
+    Raises
+    ------
+    SystemExit
+        If N50 is less than or equal to the focal region size
+    """
+    try:
+        scaffold_lengths = []
+        
+        # Determine file type and parse
+        is_genbank = check_is_genbank_with_cds(genome_file)
+        
+        if is_genbank:
+            ogf = None
+            if genome_file.endswith('.gz'):
+                ogf = gzip.open(genome_file, 'rt')
+            else:
+                ogf = open(genome_file)
+            
+            for rec in SeqIO.parse(ogf, 'genbank'):
+                scaffold_lengths.append(len(rec.seq))
+            ogf.close()
+        else:
+            # Try as FASTA
+            with open(genome_file) as off:
+                for rec in SeqIO.parse(off, 'fasta'):
+                    scaffold_lengths.append(len(rec.seq))
+        
+        if not scaffold_lengths:
+            if verbose:
+                sys.stderr.write('Error: No sequences found in genome file.\n')
+            sys.exit(1)
+        
+        n50 = calculate_n50(scaffold_lengths)
+        
+        if n50 <= focal_region_size:
+            if verbose:
+                sys.stderr.write(f'Error: Assembly N50 ({n50} bp) is less than or equal to the focal region size ({focal_region_size} bp).\n')
+                sys.stderr.write('The assembly is too fragmented for reliable analysis of this region size.\n')
+            sys.exit(1)
+        
+        if verbose:
+            sys.stderr.write(f'Assembly N50: {n50} bp (sufficient for focal region size: {focal_region_size} bp)\n')
+    
+    except SystemExit:
+        raise
+    except Exception as e:
+        sys.stderr.write('Issues with checking assembly quality.\n')
+        sys.stderr.write(traceback.format_exc() + '\n')
+        sys.exit(1)
+
+
 # Backward compatibility aliases
 printProgressBar = print_progress_bar
 parseCDSCoord = parse_cds_coord
 geneCallUsingPyrodigal = gene_call_using_pyrodigal
 checkIsGenBankWithCDS = check_is_genbank_with_cds
 confirmFasta = confirm_fasta
+calculateN50 = calculate_n50
+checkAssemblyQuality = check_assembly_quality

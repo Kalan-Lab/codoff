@@ -2,7 +2,7 @@
 dependencies = ['setuptools', 'scipy', 'biopython', 'scipy', 'seaborn', 'matplotlib', 'pyrodigal']
 name = "codoff"
 authors = [{name="Rauf Salamzade", email="salamzader@gmail.com"}]
-version = "1.2.2"
+version = "1.2.3"
 readme = "README.md"
 description = "Program to measure the irregularity of the codon usage for a single genomic region (e.g. a BGC, phage, etc.) relative to the full genome."
 

@@ -984,7 +984,11 @@ def _stat_calc_and_simulation(all_cods: Set[str], cod_freq_dict_focal: Dict[str,
     
     gene_counts_arrays = []
     gene_total_codons_list = []
+    valid_gene_list = []
     for gene in gene_list:
+        # Skip genes without codon data (e.g., genes filtered out during processing)
+        if gene not in gene_codons_dict:
+            continue
         counts = np.zeros(len(cod_order), dtype=np.float64)
         gc = gene_codons_dict[gene]
         for c, cnt in gc.items():
@@ -993,6 +997,10 @@ def _stat_calc_and_simulation(all_cods: Set[str], cod_freq_dict_focal: Dict[str,
                 counts[idx] = float(cnt)
         gene_counts_arrays.append(counts)
         gene_total_codons_list.append(int(np.sum(counts)))
+        valid_gene_list.append(gene)
+    
+    # Use valid_gene_list for simulations
+    gene_list = valid_gene_list
     gene_total_codons_arr = np.array(gene_total_codons_list, dtype=np.int64)
     
     total_codon_counts_vec = np.zeros(len(cod_order), dtype=np.float64)
@@ -1004,7 +1012,9 @@ def _stat_calc_and_simulation(all_cods: Set[str], cod_freq_dict_focal: Dict[str,
     # Setup ordered genes for sequential sampling
     sorted_genes = []
     if gene_coords:
-        sorted_genes = sorted(gene_list, key=lambda g: (gene_coords[g][0], gene_coords[g][1]))
+        # Only include genes that have coordinate data
+        sorted_genes = sorted([g for g in gene_list if g in gene_coords], 
+                             key=lambda g: (gene_coords[g][0], gene_coords[g][1]))
     
     # Simulation containers
     sim_cosine_distances: List[float] = []

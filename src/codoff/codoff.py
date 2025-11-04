@@ -359,7 +359,7 @@ def codoff_main_gbk(full_genome_file: str, focal_genbank_files: List[str], outfi
 
     It calls the private function _stat_calc_and_simulation() to 
     perform the main statistical calculations and simulations using
-    sequential sampling (contiguous-window or gene-based).
+    sequential contiguous-window sampling.
     
     The function takes the following arguments:
     * full_genome_file: str
@@ -605,7 +605,7 @@ def codoff_main_coords(full_genome_file: str, focal_scaffold: str, focal_start_c
 
     It calls the private function _stat_calc_and_simulation() to 
     perform the main statistical calculations and simulations using
-    sequential sampling (contiguous-window or gene-based).
+    sequential contiguous-window sampling.
     
     The function takes the following arguments:
     * full_genome_file: str

@@ -4,12 +4,12 @@
 [![Upload Python Package](https://github.com/Kalan-Lab/codoff/actions/workflows/python-publish.yml/badge.svg)](https://github.com/Kalan-Lab/codoff/actions/workflows/python-publish.yml)
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.13139677.svg)](https://doi.org/10.5281/zenodo.13139677)
 
-**codoff**: A program to measure the irregularity of the codon usage for a focal genomic region (e.g. a BGC, prophage, etc.) relative to the full genome. It was primarily designed to work off the output of antiSMASH biosynthetic gene cluster (BGC) predictions - but can be more broadly applied as well, with options allowing users to provide a genome in FASTA format and simply specify the coordinates of the focal region of interest. It computes an empirical P-value as to the significance of observing a codon usage profile for the focal region so discordant with what is observed for the larger genome-wide context.
+**codoff**: A program to measure the irregularity of the codon usage for a focal genomic region (e.g. a BGC, prophage, etc.) relative to the full genome. It was primarily designed to work off the output of antiSMASH biosynthetic gene cluster (BGC) predictions - but can be more broadly applied as well, with options allowing users to provide a genome in FASTA format and simply specify the coordinates of the focal region of interest. By default, it uses sequential contiguous-window sampling to compare the focal region against randomly positioned genomic windows of the same size, reporting a discordance percentile that indicates how unusual the codon usage is compared to the rest of the genome.
 
 <img src="https://github.com/Kalan-Lab/codoff/assets/4260723/05b6c7f1-9e8f-4865-b0fd-758c933bab83" width="300"> 
 
-
-**This is useful because it could indicate that the focal gene cluster has been horizontally transfered. While quick and easy to assess, we encourage users to further investigate if HGT is indeed responsible for any such signal. This is because a discordance between the codon usage for the focal gene cluster and background genome could be due to other reasons, e.g. infrequent expression of the focal gene cluster.**
+> [!IMPORTANT]
+> **This is useful because it could indicate that the focal gene cluster has been horizontally transfered. While quick and easy to assess, we encourage users to further investigate if HGT is indeed responsible for any such signal. This is because a discordance between the codon usage for the focal gene cluster and background genome could be due to other reasons, e.g. infrequent expression of the focal gene cluster.**
 
 codoff is largely adapted from the `compareBGCtoGenomeCodonUsage.py` script in the [*lsa*BGC](https://github.com/Kalan-Lab/lsaBGC) suite and presented here separately just to make it easy to install via bioconda, therefore, please cite:
 
@@ -70,7 +70,7 @@ codoff -f Csimulans_Data/Coryne_simulans_PES1/NZ_CP014634.1.region001.gbk -g Csi
 ```
 
 > [!NOTE]
-> As of v1.2.3, this uses sequential contiguous-window sampling by default, which provides a more biologically realistic null model by comparing against randomly positioned genomic regions of the same size.
+> As of v1.2.3, this uses sequential contiguous-window sampling, which provides a more biologically realistic null model by comparing against randomly positioned genomic regions of the same size.
 
 ### Example 2: Providing a genome-wide FASTA file and coordinates of a focal region
 
@@ -104,12 +104,9 @@ codoff uses a Monte Carlo simulation approach to calculate an empirical P-value 
 
 ### 3. Monte Carlo Simulation
 
-**As of v1.2.3, codoff uses sequential sampling by default**, which better preserves the spatial structure of the genome.
+**As of v1.2.3, codoff uses sequential contiguous-window sampling**, which better preserves the spatial structure of the genome.
 
-#### Default: Sequential Sampling
-The default sequential sampling method has two variants depending on data availability:
-
-**When region coordinates are available** (e.g., using `-f` with GenBank files containing genomic coordinates, or using `-s/-a/-b` coordinate mode):
+#### Sequential Contiguous-Window Sampling
 
 For each of N simulations (default: 10,000, configurable with `--num-sims`):
 1. Randomly select a scaffold from those large enough to contain the focal region size
@@ -123,28 +120,20 @@ For each of N simulations (default: 10,000, configurable with `--num-sims`):
 
 This approach tests whether the observed focal region's codon usage is significantly different from what would be expected for a randomly positioned contiguous genomic region of the same size.
 
-**(fallback method) When region coordinates are unavailable** (e.g., if GenBank files lack proper feature locations or coordinate information is missing):
+**Note**: Genomic coordinates are required for this method. The program will exit with an error if proper CDS feature locations are not available in the GenBank files.
 
-For each of N simulations:
-1. Shuffle the complete list of all genes in the genome
-2. Select genes sequentially from the shuffled list until accumulating the same number of codons as in the actual focal region
-3. Calculate codon frequencies for this simulated "focal" region
-4. Calculate background frequencies as: `total_genome_counts - simulated_focal_counts`
-5. Compute cosine distance between simulated focal and background frequencies
-6. Count how many simulated distances ≥ observed distance
+### 4. Result Interpretation
 
-This fallback approach tests whether the observed focal region's codon usage is different from a random selection of genes with the same total codon count. The output will be labeled as **"Random Sampling"**.
+codoff reports a **Discordance Percentile** that indicates where the focal region ranks among all similarly sized genomic windows:
 
-#### Legacy Mode (Optional, via `-r`/`--random-sampling` flag)
-The `-r` flag provides backward compatibility with v1.2.2 and earlier by disabling the contiguous-window sampling behavior. When `-r` is used, codoff will always use the gene-based random sampling method described above (shuffle genes and select sequentially), even if region coordinates are available. The underlying algorithm and output label (**"Random Sampling"**) are identical to the fallback method.
-
-### 4. P-value Calculation
-The empirical P-value is calculated as:
 ```
-P-value = (count of simulations with distance ≥ observed distance + 1) / (total simulations + 1)
+Discordance Percentile = (count of simulations with distance ≥ observed distance + 1) / (total simulations + 1) × 100
 ```
+
+For example, a percentile of 5.0 means the focal region is within the **top 5% most discordant regions** in terms of codon usage compared to the rest of the genome. Lower percentiles indicate more unusual/discordant codon usage, which may be evidence of horizontal gene transfer or other unusual evolutionary processes.
 
 ### 5. Reproducibility
+
 Results can be reproduced exactly using the `--seed/-x` parameter (default: 42). Using the same seed value will produce identical results across multiple runs.
 
  <!---![figure](https://github.com/Kalan-Lab/codoff/blob/main/codoff_empirical_pvalue_image.png?raw=true) --->
@@ -164,10 +153,11 @@ usage: codoff [-h] -g FULL_GENOME [-s SCAFFOLD] [-a START_COORD] [-b END_COORD] 
 
 	This program compares the codon-usage distribution of a focal-region/BGC
 	to the codon usage of the background genome. It will report the cosine
-	distance and Spearman correlation between the two profiles, as well as
-	an empirical P-value for whether the codon usage is siginficantly
-	different between the focal region and background genome. Only CDS
-	features which are of length divisible by 3 will be considered.
+	distance and Spearman correlation between the two profiles. By default,
+	it uses sequential contiguous-window sampling and reports a discordance
+	percentile indicating how unusual the focal region's codon usage is
+	compared to similarly sized genomic windows. Only CDS features which
+	are of length divisible by 3 will be considered.
 
 	Two modes of input are supported:
 
@@ -215,10 +205,6 @@ options:
                         plot will be made.
   -ns NUM_SIMS, --num-sims NUM_SIMS
                         Number of simulations to run [Default: 10000].
-  -r, --random-sampling
-                        Create null distribution of randomly sampled genes irrespective
-                        of their genomic position. Legacy option - to match
-                        results from <=v1.2.2.
   -v, --version         Print version and exist
   -x SEED, --seed SEED  Random seed for reproducible results [Default: 42].
 ```

@@ -76,21 +76,15 @@ The test suite is organized into the following categories:
 - **Purpose**: Tests complete workflows with realistic data
 - **Focus**: End-to-end functionality with real-world scenarios
 - **Key Test Classes**:
-  - `TestIntegrationWorkflow`: Tests complete workflow with realistic genome data, edge cases, and performance
+  - `TestIntegrationWorkflow`: Tests complete workflow with realistic genome data and edge cases
 
-#### 3. Proportional Sampling Tests (`test_proportional_sampling.py`)
-- **Purpose**: Detailed testing of proportional sampling logic
-- **Focus**: Ensures accurate codon distribution sampling
-- **Key Test Classes**:
-  - `TestProportionalSamplingDetailed`: Tests exact proportional sampling ratios, multiple genes, rounding behavior, and small gene sampling
-
-#### 4. antiSMASH Integration Tests (`test_antismash_codoff_integration.py`)
+#### 3. antiSMASH Integration Tests (`test_antismash_codoff_integration.py`)
 - **Purpose**: Tests integration with antiSMASH and caching functionality
 - **Focus**: Data structure integrity, background calculations, and parameter handling
 - **Key Test Classes**:
   - `TestAntismashCodoffIntegration`: Tests caching data structure, background calculation methods, and function signatures
 
-#### 5. Warning System Tests (`test_warnings.py`)
+#### 4. Warning System Tests (`test_warnings.py`)
 - **Purpose**: Tests warning messages and error handling
 - **Focus**: User feedback and error reporting
 - **Key Test Classes**:
@@ -140,9 +134,6 @@ python -m unittest tests.test_codoff
 # Run integration tests
 python -m unittest tests.test_integration
 
-# Run proportional sampling tests
-python -m unittest tests.test_proportional_sampling
-
 # Run antiSMASH integration tests
 python -m unittest tests.test_antismash_codoff_integration
 
@@ -169,8 +160,7 @@ When adding new tests, follow these guidelines:
 1. **Test Organization**: Place tests in the appropriate module based on functionality:
    - Core algorithm tests → `test_codoff.py`
    - End-to-end workflow tests → `test_integration.py`
-   - Sampling-specific tests → `test_proportional_sampling.py`
-   - processing antiSMASH results tests → `test_antismash_codoff_integration.py`
+   - Processing antiSMASH results tests → `test_antismash_codoff_integration.py`
    - Warning/error tests → `test_warnings.py`
 
 2. **Test Naming**: Use descriptive test method names that explain what is being tested:

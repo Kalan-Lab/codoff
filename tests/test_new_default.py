@@ -74,10 +74,17 @@ ORIGIN
         """Tear down test files."""
         os.remove(self.test_gbk)
         os.remove(self.focal_gbk)
+        # Clean up output file if it exists
+        if os.path.exists('test_output.txt'):
+            os.remove('test_output.txt')
 
     def test_sequential_sampling_is_default(self):
         """Test that sequential sampling is the default."""
         outfile = 'test_output.txt'
+        # Remove output file if it exists from previous failed run
+        if os.path.exists(outfile):
+            os.remove(outfile)
+        
         codoff_cmd = [
             sys.executable,
             'bin/codoff',
@@ -92,7 +99,8 @@ ORIGIN
             self.fail(f"Command failed with return code {result.returncode}")
         with open(outfile, 'r') as f:
             content = f.read()
-        self.assertIn('Sequential Sampling', content)
+        # Updated assertion: no longer looking for "Sequential Sampling" line since we removed it
+        self.assertIn('Discordance Percentile', content)
         os.remove(outfile)
 
 if __name__ == '__main__':

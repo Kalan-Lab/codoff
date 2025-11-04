@@ -73,15 +73,23 @@ ORIGIN
 
     def tearDown(self):
         """Tear down test files."""
-        for f in [self.test_gbk, self.focal_gbk, 'output1.txt', 'output2.txt', 'output3.txt']:
+        for f in [self.test_gbk, self.focal_gbk]:
             if os.path.exists(f):
                 os.remove(f)
+        # Clean up output files if they exist
+        for outfile in ['output1.txt', 'output2.txt', 'output3.txt']:
+            if os.path.exists(outfile):
+                os.remove(outfile)
 
     def test_seed_reproducibility(self):
         """Test that using the same seed produces identical results."""
         # Run codoff three times with the same seed
         outputs = []
         for i, outfile in enumerate(['output1.txt', 'output2.txt', 'output3.txt'], 1):
+            # Remove output file if it exists from previous failed run
+            if os.path.exists(outfile):
+                os.remove(outfile)
+            
             codoff_cmd = [
                 sys.executable,
                 'bin/codoff',
@@ -108,15 +116,19 @@ ORIGIN
         self.assertEqual(outputs[1], outputs[2], 
                         "Second and third run produced different results with same seed")
         
-        # Check that empirical p-value is present (tab-separated format)
+        # Check that discordance percentile is present (sequential sampling uses percentile)
         for output in outputs:
-            self.assertIn('Empirical P-value', output)
+            self.assertIn('Discordance Percentile', output)
 
     def test_different_seeds_produce_different_results(self):
         """Test that different seeds can produce different results."""
         outputs = []
         pvalues = []
         for seed, outfile in [(42, 'output1.txt'), (123, 'output2.txt')]:
+            # Remove output file if it exists from previous failed run
+            if os.path.exists(outfile):
+                os.remove(outfile)
+            
             codoff_cmd = [
                 sys.executable,
                 'bin/codoff',
@@ -136,15 +148,15 @@ ORIGIN
             with open(outfile, 'r') as f:
                 content = f.read()
                 outputs.append(content)
-                # Extract p-value for comparison
+                # Extract percentile for comparison (sequential sampling uses percentile)
                 for line in content.split('\n'):
-                    if line.startswith('Empirical P-value'):
-                        pvalue = float(line.split('\t')[1])
-                        pvalues.append(pvalue)
+                    if line.startswith('Discordance Percentile'):
+                        percentile = float(line.split('\t')[1])
+                        pvalues.append(percentile)
                         break
         
         # Verify both runs completed successfully
-        self.assertEqual(len(pvalues), 2, "Failed to extract p-values from both runs")
+        self.assertEqual(len(pvalues), 2, "Failed to extract percentiles from both runs")
         
         # With diverse codon usage and different seeds, results should differ
         # (though in rare cases they might be the same due to randomness)

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Script to run codoff simulations across random regions of a genome
-and generate histograms of the resulting p-values.
+and generate histograms of the resulting discordance percentiles.
 """
 
 import argparse
@@ -10,6 +10,7 @@ import sys
 from pathlib import Path
 from concurrent.futures import ProcessPoolExecutor, as_completed
 
+import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 from Bio import SeqIO
@@ -42,21 +43,20 @@ def run_one_simulation(args_tuple):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Run codoff simulations on random genome regions and plot p-value distributions."
+        description="Run codoff simulations on random genome regions and plot discordance percentile distributions."
     )
     parser.add_argument("-g", "--genome-file", type=Path, required=True, help="Path to genome file (GenBank or FASTA)")
     parser.add_argument("-ns","--num-sims", type=int, default=1000, help="Number of random genomic regions to test [Default: 1000]")
     parser.add_argument("-rs","--region-size", type=int, default=100000, help="Size of each focal region in bp [Default: 100000]")
-    parser.add_argument("-o","--output-file", type=Path, default="pvalue_histogram.png", help="Output file for histogram [Default: pvalue_histogram.png]")
-    parser.add_argument("-r", "--random-sampling", action="store_true", help="Use legacy random gene sampling instead of sequential contiguous-window sampling")
+    parser.add_argument("-o","--output-file", type=Path, default="discordance_percentile_histogram.png", help="Output file for histogram [Default: discordance_percentile_histogram.png]")
+    parser.add_argument("-d","--data-file", type=Path, default=None, help="Optional: Save raw percentile data to CSV file")
     parser.add_argument("-ncs","--num-codoff-sims", type=int, default=1000, help="Number of simulations for each codoff run [Default: 1000]")
     parser.add_argument("-mj", "--max-jobs", type=int, default=1, help="Number of parallel jobs [Default: 1]")
     parser.add_argument('-x', '--seed', type=int, default=None, help='Random seed for reproducible region selection')
     
     args = parser.parse_args()
     
-    proportional_sampling = args.random_sampling
-    sequential_sampling = not proportional_sampling
+    sequential_sampling = True
     
     # Set the master seed for the simulation initiator if provided
     if args.seed is not None:
@@ -98,7 +98,7 @@ def main():
         tasks.append((args.genome_file, scaffold_id, start, end, args.num_codoff_sims, sequential_sampling, run_seed))
     
     # Run simulations (with or without parallelization)
-    p_values = []
+    percentiles = []
     
     if args.max_jobs == 1:
         # Sequential execution with simple progress
@@ -107,9 +107,10 @@ def main():
                 sys.stderr.write(f"  Completed {i + 1}/{args.num_sims} simulations\n")
             result = run_one_simulation(task)
             if result:
-                p_val = result.get('emp_pval_freq')
-                if p_val is not None:
-                    p_values.append(p_val)
+                empirical_freq = result.get('empirical_freq')
+                if empirical_freq is not None:
+                    percentile = empirical_freq * 100.0
+                    percentiles.append(percentile)
     else:
         # Parallel execution with progress bar
         with ProcessPoolExecutor(max_workers=args.max_jobs) as executor:
@@ -117,27 +118,50 @@ def main():
             for future in tqdm(as_completed(futures), total=len(futures), desc="Simulations"):
                 result = future.result()
                 if result:
-                    p_val = result.get('emp_pval_freq')
-                    if p_val is not None:
-                        p_values.append(p_val)
+                    empirical_freq = result.get('empirical_freq')
+                    if empirical_freq is not None:
+                        percentile = empirical_freq * 100.0
+                        percentiles.append(percentile)
     
     sys.stderr.write(f"Completed all simulations\n")
-    sys.stderr.write(f"  P-values collected: {len(p_values)}\n")
+    sys.stderr.write(f"  Discordance percentiles collected: {len(percentiles)}\n")
     
     # Generate plot
-    if p_values:
-        plt.figure(figsize=(8, 6))
-        sns.histplot(p_values, bins=50, kde=True)
-        plt.xlabel("Empirical P-value")
+    if percentiles:
+        plt.figure(figsize=(10, 6))
+        sns.histplot(percentiles, bins=50, kde=True)
+        plt.xlabel("Discordance Percentile (%)")
         plt.ylabel("Frequency")
-        plt.title(f"P-value Distribution ({len(p_values)} simulations)")
+        plt.title(f"Discordance Percentile Distribution\n({len(percentiles)} random genomic regions of {args.region_size:,} bp)")
+        plt.xlim(0, 100)
+        plt.axvline(x=5, color='r', linestyle='--', alpha=0.5, label='5% threshold')
+        plt.axvline(x=10, color='orange', linestyle='--', alpha=0.5, label='10% threshold')
+        plt.legend()
         plt.savefig(args.output_file, dpi=300, bbox_inches='tight')
         plt.close()
         sys.stderr.write(f"Saved histogram to {args.output_file}\n")
+        
+        # Print summary statistics
+        sys.stderr.write(f"\nSummary Statistics:\n")
+        sys.stderr.write(f"  Mean: {np.mean(percentiles):.2f}%\n")
+        sys.stderr.write(f"  Median: {np.median(percentiles):.2f}%\n")
+        sys.stderr.write(f"  Std Dev: {np.std(percentiles):.2f}%\n")
+        sys.stderr.write(f"  Min: {np.min(percentiles):.2f}%\n")
+        sys.stderr.write(f"  Max: {np.max(percentiles):.2f}%\n")
+        sys.stderr.write(f"  < 5%: {sum(1 for p in percentiles if p < 5)} ({100*sum(1 for p in percentiles if p < 5)/len(percentiles):.1f}%)\n")
+        sys.stderr.write(f"  < 10%: {sum(1 for p in percentiles if p < 10)} ({100*sum(1 for p in percentiles if p < 10)/len(percentiles):.1f}%)\n")
+        
+        # Save raw data if requested
+        if args.data_file:
+            with open(args.data_file, 'w') as f:
+                f.write("discordance_percentile\n")
+                for p in percentiles:
+                    f.write(f"{p:.4f}\n")
+            sys.stderr.write(f"Saved raw data to {args.data_file}\n")
     else:
-        sys.stderr.write("No p-values collected\n")
+        sys.stderr.write("No discordance percentiles collected\n")
     
-    sys.stderr.write("Done!\n")
+    sys.stderr.write("\nDone!\n")
 
 
 if __name__ == "__main__":

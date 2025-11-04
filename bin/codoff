@@ -85,9 +85,6 @@ def create_parser():
 	parser.add_argument('-ns', '--num-sims', type=int,
 		help="Number of simulations to run [Default: 10000].",
 		required=False, default=10000)
-	parser.add_argument('-r', '--random-sampling', action='store_true',
-		help="Create null distribution of randomly sampled genes irrespective\nof their genomic position. Legacy option - to match\nresults from <=v1.2.2.",
-		required=False, default=False)
 	parser.add_argument('-v', '--version', action='store_true', 
 		help="Print version and exist", 
 		required=False, default=False)
@@ -120,8 +117,7 @@ def main():
 	outfile = myargs.outfile
 	plot_outfile = myargs.plot_outfile
 	num_sims = myargs.num_sims
-	proportional_sampling = myargs.random_sampling
-	sequential_sampling = not proportional_sampling
+	sequential_sampling = True
 	seed = myargs.seed
 
 	"""

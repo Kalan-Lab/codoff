@@ -358,8 +358,8 @@ def codoff_main_gbk(full_genome_file: str, focal_genbank_files: List[str], outfi
     be ignored.
 
     It calls the private function _stat_calc_and_simulation() to 
-    perform the main statistical calculations and simulations used 
-    for inference of the empirical P-value.
+    perform the main statistical calculations and simulations using
+    sequential sampling (contiguous-window or gene-based).
     
     The function takes the following arguments:
     * full_genome_file: str
@@ -604,8 +604,8 @@ def codoff_main_coords(full_genome_file: str, focal_scaffold: str, focal_start_c
     background genome.
 
     It calls the private function _stat_calc_and_simulation() to 
-    perform the main statistical calculations and simulations used 
-    for inference of the empirical P-value.
+    perform the main statistical calculations and simulations using
+    sequential sampling (contiguous-window or gene-based).
     
     The function takes the following arguments:
     * full_genome_file: str
@@ -886,32 +886,26 @@ def codoff_main_coords(full_genome_file: str, focal_scaffold: str, focal_start_c
     
 def _print_output_stdout(result: Dict[str, Any]):
     """Helper function to print results to stdout."""
-    sys.stdout.write(f"Empirical P-value\t{result['emp_pval_freq']}\n")
+    percentile = result['empirical_freq'] * 100.0
+    sys.stdout.write(f"Discordance Percentile\t{round(percentile, 2)}\n")
     sys.stdout.write(f"Cosine Distance\t{round(result['cosine_distance'], 3)}\n")
     sys.stdout.write(f"Spearman's Rho\t{round(result['rho'], 3)}\n")
     sys.stdout.write(f"Codons\t{', '.join(result['codon_order'])}\n")
     sys.stdout.write(f"Focal Region Codon Frequencies\t{', '.join(map(str, result['focal_region_codons']))}\n")
     sys.stdout.write(f"Background Genome Codon Frequencies\t{', '.join(map(str, result['background_genome_codons']))}\n")
-    if result.get('used_contiguous_window', False):
-        sys.stdout.write("Sampling Method\tSequential Sampling\n")
-    else:
-        sys.stdout.write("Sampling Method\tRandom Sampling\n")
 
 
 def _write_output_file(result: Dict[str, Any], outfile: str):
     """Helper function to write results to a file."""
     try:
         with open(outfile, 'w') as f:
-            f.write(f"Empirical P-value\t{result['emp_pval_freq']}\n")
+            percentile = result['empirical_freq'] * 100.0
+            f.write(f"Discordance Percentile\t{round(percentile, 2)}\n")
             f.write(f"Cosine Distance\t{round(result['cosine_distance'], 3)}\n")
             f.write(f"Spearman's Rho\t{round(result['rho'], 3)}\n")
             f.write(f"Codons\t{', '.join(result['codon_order'])}\n")
             f.write(f"Focal Region Codon Frequencies\t{', '.join(map(str, result['focal_region_codons']))}\n")
             f.write(f"Background Genome Codon Frequencies\t{', '.join(map(str, result['background_genome_codons']))}\n")
-            if result.get('used_contiguous_window', False):
-                f.write("Sampling Method\tSequential Sampling\n")
-            else:
-                f.write("Sampling Method\tRandom Sampling\n")
     except Exception as e:
         sys.stderr.write(f"Issue creating output file: {e}\n")
         sys.exit(1)
@@ -921,20 +915,20 @@ def _stat_calc_and_simulation(all_cods: Set[str], cod_freq_dict_focal: Dict[str,
     """
     Private function that performs the main statistical calculations and Monte Carlo simulations.
     
-    SIMULATION LOGIC:
-    The simulation uses ALL genes from the genome (both focal and background genes) as the sampling pool.
-    For each simulation iteration:
-    1. Shuffle the complete list of genes (gene_list)
-    2. Select genes sequentially from the shuffled list until we accumulate the same number of codons
-       as in the actual focal region (target_codon_count)
-    3. Calculate codon frequencies for this simulated "focal" region
-    4. Calculate background frequencies as: total_genome_counts - simulated_focal_counts
-    5. Compute cosine distance between simulated focal and background frequencies
-    6. Count how many simulated distances >= observed distance for empirical P-value
+    SEQUENTIAL CONTIGUOUS-WINDOW SAMPLING:
+    - Randomly select genomic windows of the same size as the focal region
+    - Extract all genes fully contained within each window
+    - Calculate codon frequencies for each simulated window
+    - Compare focal region against these random windows
+    - Count how many simulated distances >= observed distance
+    - Reports: Discordance Percentile
     
-    This approach tests whether the observed focal region's codon usage is significantly different
-    from what would be expected if we randomly selected the same amount of coding sequence from
-    anywhere in the genome.
+    This approach tests whether the observed focal region's codon usage is significantly 
+    different from what would be expected for randomly positioned contiguous genomic 
+    regions of the same size.
+    
+    NOTE: This function requires focal_region_size and gene_coords to be provided.
+    If these are not available, the calling function should handle the error.
     """
     # Set random seed for reproducible results
     if seed is not None:
@@ -1018,118 +1012,90 @@ def _stat_calc_and_simulation(all_cods: Set[str], cod_freq_dict_focal: Dict[str,
     
     # Simulation containers
     sim_cosine_distances: List[float] = []
-    emp_pval_count = 0
+    extreme_count = 0  # Count of simulations with distance >= observed
 
     if verbose:
         sys.stderr.write('Running simulation sequentially...\n')
         util.printProgressBar(0, 10, prefix = 'Progress:', suffix = 'Complete', length = 50)
 
-    # If we have region size, perform contiguous-window simulations
-    if focal_region_size is not None and gene_coords and len(sorted_genes) > 0 and scaffold_lengths:
-        # Filter scaffolds large enough for the region size (matching run_simulations.py)
-        valid_scaffolds = [(scaf_id, scaf_len) for scaf_id, scaf_len in scaffold_lengths.items() if scaf_len > focal_region_size]
-        
-        # Calculate total genome codons for hyper-dense filtering
-        total_genome_codons = np.sum(total_codon_counts_vec)
-        
-        if valid_scaffolds:
-            # Change from 'for' loop to 'while' loop to skip empty windows
-            while len(sim_cosine_distances) < num_sims:
-                # --- UNIFIED SAMPLING LOGIC ---
-                # Pick a random window, just like in run_simulations.py
-                start_scaffold, scaffold_len = random.choice(valid_scaffolds)
-                start_coord = random.randint(1, scaffold_len - focal_region_size)
-                sim_region_end = start_coord + focal_region_size
-                # ---
-
-                sim_focal_vec = np.zeros(len(cod_order), dtype=np.float64)
-
-                # Now, find all genes *fully contained* in this random window
-                for gene_locus_tag in sorted_genes:
-                    scaffold, gene_start, gene_end = gene_coords[gene_locus_tag]
-
-                    if scaffold != start_scaffold:
-                        continue
-
-                    # Check if gene is fully contained within the [start_coord, sim_region_end] window
-                    if gene_start >= start_coord and gene_end <= sim_region_end:
-                        original_gene_index = gene_list.index(gene_locus_tag)
-                        sim_focal_vec += gene_counts_arrays[original_gene_index]
-
-                    # Optimization: if we're past the window, stop looping over this scaffold
-                    if gene_start > sim_region_end:
-                        break
-
-                # Skip empty windows (no genes found) to match observed data filtering
-                sim_focal_codons = np.sum(sim_focal_vec)
-                if sim_focal_codons == 0:
-                    continue
-                
-                # Skip hyper-dense windows (>= 5% of genome) to match observed data filtering
-                if total_genome_codons > 0:
-                    size_comparison = sim_focal_codons / total_genome_codons
-                    if size_comparison >= 0.05:
-                        continue
-
-                sim_background_vec = total_codon_counts_vec - sim_focal_vec
-                eps = 1e-10
-                sim_dist = spatial.distance.cosine(sim_focal_vec + eps, sim_background_vec + eps)
-                sim_cosine_distances.append(sim_dist)
-                if sim_dist >= cosine_distance:
-                    emp_pval_count += 1
-
-                # Update progress bar using current simulation count
-                current_sim_count = len(sim_cosine_distances)
-                if verbose and num_sims >= 1000 and current_sim_count % 1000 == 0:
-                    util.printProgressBar(math.floor(current_sim_count / max(1, num_sims // 10)), 10, prefix = 'Progress:', suffix = 'Complete', length = 50)
+    # Verify we have the required data for contiguous-window sampling
+    if focal_region_size is None or not gene_coords or len(sorted_genes) == 0 or not scaffold_lengths:
+        sys.stderr.write('Error: Sequential contiguous-window sampling requires genomic coordinates.\n')
+        sys.stderr.write('Please ensure your GenBank files contain proper CDS feature locations.\n')
+        sys.exit(1)
     
-    # Fallback to original codon-count-based sampling
-    if not sim_cosine_distances:
-        for sim in range(num_sims):
-            gene_indices = np.arange(len(gene_counts_arrays))
-            np.random.shuffle(gene_indices)
-            
-            sim_focal_vec = np.zeros(len(cod_order), dtype=np.float64)
-            total_collected = 0
-            for idx in gene_indices:
-                cds_total = gene_total_codons_arr[idx]
-                if total_collected + cds_total <= target_codon_count:
-                    sim_focal_vec += gene_counts_arrays[idx]
-                    total_collected += cds_total
-                else:
-                    remaining = target_codon_count - total_collected
-                    if remaining > 0 and cds_total > 0:
-                        prop = remaining / float(cds_total)
-                        sim_focal_vec += gene_counts_arrays[idx] * prop
-                    break
-            sim_background_vec = total_codon_counts_vec - sim_focal_vec
-            eps = 1e-10
-            sim_cosine_distance = spatial.distance.cosine(sim_focal_vec + eps, sim_background_vec + eps)
-            sim_cosine_distances.append(sim_cosine_distance)
-            if sim_cosine_distance >= cosine_distance:
-                emp_pval_count += 1
-            if verbose and num_sims >= 1000 and (sim + 1) % 1000 == 0:
-                util.printProgressBar(math.floor((sim + 1)/max(1, num_sims//10)), 10, prefix = 'Progress:', suffix = 'Complete', length = 50)
-
-    # Empirical p-value (+1 smoothing)
-    emp_pval_freq = (emp_pval_count + 1) / (num_sims + 1)
+    # Filter scaffolds large enough for the region size
+    valid_scaffolds = [(scaf_id, scaf_len) for scaf_id, scaf_len in scaffold_lengths.items() if scaf_len > focal_region_size]
     
-    # Determine sampling method label based on what was actually used
-    # If we successfully used contiguous-window sampling, label as "Sequential Sampling"
-    # Otherwise (shuffle-and-select fallback), label as "Random Sampling"
-    used_contiguous_window = (focal_region_size is not None and gene_coords and 
-                              len(sorted_genes) > 0 and scaffold_lengths and 
-                              len(sim_cosine_distances) > 0)
+    if not valid_scaffolds:
+        sys.stderr.write(f'Error: No scaffolds are large enough to contain the focal region size ({focal_region_size} bp).\n')
+        sys.exit(1)
+    
+    # Calculate total genome codons for hyper-dense filtering
+    total_genome_codons = np.sum(total_codon_counts_vec)
+    
+    # Change from 'for' loop to 'while' loop to skip empty windows
+    while len(sim_cosine_distances) < num_sims:
+        # --- UNIFIED SAMPLING LOGIC ---
+        # Pick a random window
+        start_scaffold, scaffold_len = random.choice(valid_scaffolds)
+        start_coord = random.randint(1, scaffold_len - focal_region_size)
+        sim_region_end = start_coord + focal_region_size
+        # ---
+
+        sim_focal_vec = np.zeros(len(cod_order), dtype=np.float64)
+
+        # Now, find all genes *fully contained* in this random window
+        for gene_locus_tag in sorted_genes:
+            scaffold, gene_start, gene_end = gene_coords[gene_locus_tag]
+
+            if scaffold != start_scaffold:
+                continue
+
+            # Check if gene is fully contained within the [start_coord, sim_region_end] window
+            if gene_start >= start_coord and gene_end <= sim_region_end:
+                original_gene_index = gene_list.index(gene_locus_tag)
+                sim_focal_vec += gene_counts_arrays[original_gene_index]
+
+            # Optimization: if we're past the window, stop looping over this scaffold
+            if gene_start > sim_region_end:
+                break
+
+        # Skip empty windows (no genes found) to match observed data filtering
+        sim_focal_codons = np.sum(sim_focal_vec)
+        if sim_focal_codons == 0:
+            continue
+        
+        # Skip hyper-dense windows (>= 5% of genome) to match observed data filtering
+        if total_genome_codons > 0:
+            size_comparison = sim_focal_codons / total_genome_codons
+            if size_comparison >= 0.05:
+                continue
+
+        sim_background_vec = total_codon_counts_vec - sim_focal_vec
+        eps = 1e-10
+        sim_dist = spatial.distance.cosine(sim_focal_vec + eps, sim_background_vec + eps)
+        sim_cosine_distances.append(sim_dist)
+        if sim_dist >= cosine_distance:
+            extreme_count += 1
+
+        # Update progress bar using current simulation count
+        current_sim_count = len(sim_cosine_distances)
+        if verbose and num_sims >= 1000 and current_sim_count % 1000 == 0:
+            util.printProgressBar(math.floor(current_sim_count / max(1, num_sims // 10)), 10, prefix = 'Progress:', suffix = 'Complete', length = 50)
+
+    # Calculate empirical frequency (with +1 smoothing)
+    # This represents the proportion of simulations as or more extreme than observed
+    empirical_freq = (extreme_count + 1) / (num_sims + 1)
 
     result = {
-        'emp_pval_freq': emp_pval_freq,
+        'empirical_freq': empirical_freq,
         'cosine_distance': float(cosine_distance),
         'rho': float(rho),
         'codon_order': cod_order,
         'focal_region_codons': [int(x) for x in list(foc_cod_freqs)],
         'background_genome_codons': [int(x) for x in list(bkg_cod_freqs)],
         'sequential_sampling': sequential_sampling,
-        'used_contiguous_window': used_contiguous_window,
     }
 
     if outfile == 'stdout':

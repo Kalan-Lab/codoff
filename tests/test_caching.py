@@ -48,7 +48,7 @@ class TestCachingFunctionality(unittest.TestCase):
         )
         
         # Verify the result structure
-        expected_keys = ['empirical_pvalue', 'cosine_distance', 'rho', 'focal_region_codons']
+        expected_keys = ['empirical_freq', 'cosine_distance', 'rho', 'focal_region_codons']
         for key in expected_keys:
             self.assertIn(key, result_direct)
         
@@ -70,14 +70,14 @@ class TestCachingFunctionality(unittest.TestCase):
         )
         
         # Both should complete successfully
-        self.assertIn('empirical_pvalue', result_100)
-        self.assertIn('empirical_pvalue', result_500)
+        self.assertIn('empirical_freq', result_100)
+        self.assertIn('empirical_freq', result_500)
         
-        # P-values should be in valid range
-        self.assertGreaterEqual(result_100['empirical_pvalue'], 0.0)
-        self.assertLessEqual(result_100['empirical_pvalue'], 1.0)
-        self.assertGreaterEqual(result_500['empirical_pvalue'], 0.0)
-        self.assertLessEqual(result_500['empirical_pvalue'], 1.0)
+        # Discordance frequencies should be in valid range
+        self.assertGreaterEqual(result_100['empirical_freq'], 0.0)
+        self.assertLessEqual(result_100['empirical_freq'], 1.0)
+        self.assertGreaterEqual(result_500['empirical_freq'], 0.0)
+        self.assertLessEqual(result_500['empirical_freq'], 1.0)
 
 
 if __name__ == '__main__':

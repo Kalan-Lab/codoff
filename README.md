@@ -4,7 +4,7 @@
 [![Upload Python Package](https://github.com/Kalan-Lab/codoff/actions/workflows/python-publish.yml/badge.svg)](https://github.com/Kalan-Lab/codoff/actions/workflows/python-publish.yml)
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.13139677.svg)](https://doi.org/10.5281/zenodo.13139677)
 
-**codoff**: A program to measure the irregularity of the codon usage for a focal genomic region (e.g. a BGC, prophage, etc.) relative to the full genome. It was primarily designed to work off the output of antiSMASH biosynthetic gene cluster (BGC) predictions - but can be more broadly applied as well, with options allowing users to provide a genome in FASTA format and simply specify the coordinates of the focal region of interest. By default, it uses sequential contiguous-window sampling to compare the focal region against randomly positioned genomic windows of the same size, reporting a discordance percentile that indicates how unusual the codon usage is compared to the rest of the genome.
+**codoff**: A program to measure the irregularity of the codon usage for a focal genomic region (e.g. a BGC, prophage, etc.) relative to the full genome. It was primarily designed to work off the output of antiSMASH biosynthetic gene cluster (BGC) predictions - but can be more broadly applied as well, with options allowing users to provide a genome in FASTA format and simply specify the coordinates of the focal region of interest. It uses sequential contiguous-window sampling (v1.2.3+) to compare the focal region against randomly positioned genomic windows of the same size, reporting a discordance percentile that indicates how unusual the codon usage is compared to the rest of the genome.
 
 <img src="https://github.com/Kalan-Lab/codoff/assets/4260723/05b6c7f1-9e8f-4865-b0fd-758c933bab83" width="300"> 
 
@@ -56,12 +56,25 @@ pip install -e .
 
 Uncompress the example inputs (trimmed down to save space). The input includes: (1) BGC predictions and (2) the genome of a *Corynebacterium simulans* isolate that we previously reported to feature a non-ribosomal peptide synthase that synthesizes a metallophore in the *lsa*BGC manuscript. Expected results from using v1.2.3 of codoff are also included. 
 
+A demo can be run automatically via the bash script:
+
 ```bash
-# within codoff git repo, uncompress the input data
-tar -zxvf Csimulans_Data.tar.gz
+bash run_test_case.sh
 ```
 
-### Example 1: Providing focal region and genome-wide GenBank files as input (e.g. based on antiSMASH outputs)
+This should take around half a minute:
+
+```
+real	0m34.700s
+user	0m32.973s
+sys	0m0.558s
+```
+
+You can explore the results and also compare the results you produced in the `Csimulans_Data/` folder with the expected results in `Csimulans_Data/expected_results_v1.2.3/` folder.
+
+Let's break down what this test is doing, but first remove the directory: `rm -r Csimulans_Data/` and then uncompress it again: `tar -zxvf Csimulans_Data.tar.gz`.
+
+### First Command: Providing focal region and genome-wide GenBank files as input (e.g. based on antiSMASH outputs)
 
 (WORKS FOR BOTH EUKARYOTES & BACTERIA) Focal region and full-genome provided as GenBank files with CDS features (compatible with antiSMASH outputs). Multiple focal region GenBank files can be provided, e.g. consider a biosynthetic gene cluster split across multiple scaffolds due to assembly fragmentation. 
 
@@ -72,7 +85,7 @@ codoff -f Csimulans_Data/Coryne_simulans_PES1/NZ_CP014634.1.region001.gbk -g Csi
 > [!NOTE]
 > As of v1.2.3, this uses sequential contiguous-window sampling, which provides a more biologically realistic null model by comparing against randomly positioned genomic regions of the same size.
 
-### Example 2: Providing a genome-wide FASTA file and coordinates of a focal region
+### Second Command: Providing a genome-wide FASTA file and coordinates of a focal region
 
 (WORKS ONLY FOR BACTERIA) Full genome is provided as a FASTA or GenBank file. If CDS features are missing, gene calling is performed using [pyrodigal](https://github.com/althonos/pyrodigal). Afterwards, the focal region is determined through user speciefied coordinates.
 
@@ -88,12 +101,13 @@ Here, we also requested the `-p` argument to generate a plot of the simulated di
 
 A more detailed example on how homologous instances of the same five-gene operon differ in codon usage between an instance on the plasmid and chromosome can be found on the wiki: [Examples of inferring codon usage for the *crt* operon in a chromosomal and plasmid context](https://github.com/Kalan-Lab/codoff/wiki/Investigating-BGCs-from-Corynebacterium-simulans)
 
-## Algorithm for computing empirical P-value
+## Algorithm for computing Discordance Percentile
 
-codoff uses a Monte Carlo simulation approach to calculate an empirical P-value to assess codon usage differences between the focal region(s) of interest and the background genome. The algorithm works as follows:
+codoff uses a Monte Carlo simulation approach to calculate a discordance percentile to assess codon usage differences between the focal region(s) of interest and the background genome. The algorithm works as follows:
 
 ### 1. Data Preparation
 - Extract all CDS features from the genome (genes with lengths divisible by 3)
+- Skip CDS features with fuzzy/partial boundaries (indicated by `<` or `>` in GenBank notation, e.g., `<1..500` or `1000..>1500`)
 - Calculate codon frequency distributions for:
   - **Focal region**: Codons from genes in the BGC/focal region
   - **Background genome**: All remaining genes in the genome
@@ -145,7 +159,7 @@ Beginning in v1.2.0, codoff can also be used as a function in your Python code. 
 ## Commandline usage 
 
 ```
-usage: codoff [-h] -g FULL_GENOME [-s SCAFFOLD] [-a START_COORD] [-b END_COORD] [-f FOCAL_GENBANKS [FOCAL_GENBANKS ...]] [-o OUTFILE] [-p PLOT_OUTFILE] [-ns NUM_SIMS] [-r] [-v] [-x SEED]
+usage: codoff [-h] -g FULL_GENOME [-s SCAFFOLD] [-a START_COORD] [-b END_COORD] [-f FOCAL_GENBANKS [FOCAL_GENBANKS ...]] [-o OUTFILE] [-p PLOT_OUTFILE] [-ns NUM_SIMS] [-m MAX_FOCAL_CDS_FRACTION] [-v] [-x SEED]
 
 	Program: codoff
 	Author: Rauf Salamzade
@@ -153,11 +167,12 @@ usage: codoff [-h] -g FULL_GENOME [-s SCAFFOLD] [-a START_COORD] [-b END_COORD] 
 
 	This program compares the codon-usage distribution of a focal-region/BGC
 	to the codon usage of the background genome. It will report the cosine
-	distance and Spearman correlation between the two profiles. By default,
-	it uses sequential contiguous-window sampling and reports a discordance
+	distance and Spearman correlation between the two profiles. It uses 
+	sequential contiguous-window sampling (v1.2.3+) and reports a discordance
 	percentile indicating how unusual the focal region's codon usage is
 	compared to similarly sized genomic windows. Only CDS features which
-	are of length divisible by 3 will be considered.
+	are of length divisible by 3 will be considered. CDS features with 
+	fuzzy/partial boundaries (< or >) are skipped.
 
 	Two modes of input are supported:
 
@@ -205,6 +220,9 @@ options:
                         plot will be made.
   -ns NUM_SIMS, --num-sims NUM_SIMS
                         Number of simulations to run [Default: 10000].
+  -m MAX_FOCAL_CDS_FRACTION, --max-focal-cds-fraction MAX_FOCAL_CDS_FRACTION
+                        Maximum allowed fraction of total genome CDS length for focal region
+                        [Default: 0.05].
   -v, --version         Print version and exist
   -x SEED, --seed SEED  Random seed for reproducible results [Default: 42].
 ```

@@ -123,7 +123,7 @@ ORIGIN
     def test_different_seeds_produce_different_results(self):
         """Test that different seeds can produce different results."""
         outputs = []
-        pvalues = []
+        percentiles = []
         for seed, outfile in [(42, 'output1.txt'), (123, 'output2.txt')]:
             # Remove output file if it exists from previous failed run
             if os.path.exists(outfile):
@@ -152,11 +152,11 @@ ORIGIN
                 for line in content.split('\n'):
                     if line.startswith('Discordance Percentile'):
                         percentile = float(line.split('\t')[1])
-                        pvalues.append(percentile)
+                        percentiles.append(percentile)
                         break
         
         # Verify both runs completed successfully
-        self.assertEqual(len(pvalues), 2, "Failed to extract percentiles from both runs")
+        self.assertEqual(len(percentiles), 2, "Failed to extract percentiles from both runs")
         
         # With diverse codon usage and different seeds, results should differ
         # (though in rare cases they might be the same due to randomness)

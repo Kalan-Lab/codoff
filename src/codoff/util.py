@@ -22,8 +22,6 @@ def print_progress_bar(iteration: int, total: int, prefix: str = '',
     """
     Create a terminal progress bar.
     
-    Function from: https://stackoverflow.com/questions/3173320/text-progress-bar-in-terminal-with-block-characters
-    
     Parameters
     ----------
     iteration : int
@@ -42,6 +40,10 @@ def print_progress_bar(iteration: int, total: int, prefix: str = '',
         Character used to fill the progress bar, by default '█'
     print_end : str, optional
         End character (e.g., "\\r", "\\r\\n"), by default "\\r"
+    
+    Notes
+    -----
+    Function adapted from: https://stackoverflow.com/questions/3173320/text-progress-bar-in-terminal-with-block-characters
     """
     percent = ("{0:." + str(decimals) + "f}").format(
         100 * (iteration / float(total)))
@@ -56,25 +58,30 @@ def print_progress_bar(iteration: int, total: int, prefix: str = '',
 
 def parse_cds_coord(location: FeatureLocation) -> Tuple[List[List[int]], int, int, str, bool]:
     """
-    Parse a Biopython FeatureLocation object to extract start, end, and strand.
-    
-    This function replaces manual string parsing with direct use of Biopython's
-    object attributes for robustness, especially with multi-exon eukaryotic features.
+    Parse a Biopython FeatureLocation object to extract genomic coordinates.
     
     Parameters
     ----------
     location : FeatureLocation
-        Biopython FeatureLocation object from a SeqFeature.
+        Biopython FeatureLocation object from a SeqFeature
     
     Returns
     -------
-    Tuple[List[List[int]], int, int, str, bool]
-        Tuple containing:
-        - all_coords: List of [start, end, direction] for each exon
-        - start: Minimum start coordinate (1-based)
-        - end: Maximum end coordinate
-        - direction: Strand direction ('+' or '-')
-        - is_multi_part: Whether the CDS spans multiple exons
+    all_coords : List[List[int]]
+        List of [start, end, direction] for each exon/part
+    start : int
+        Minimum start coordinate (1-based)
+    end : int
+        Maximum end coordinate
+    direction : str
+        Strand direction ('+' or '-')
+    is_multi_part : bool
+        Whether the CDS spans multiple exons
+    
+    Notes
+    -----
+    Uses Biopython's object attributes directly for robustness, especially 
+    with multi-exon eukaryotic features.
     """
     try:
         all_coords = []
@@ -104,7 +111,7 @@ def parse_cds_coord(location: FeatureLocation) -> Tuple[List[List[int]], int, in
 def gene_call_using_pyrodigal(genome_fasta_file: str, focal_scaffold: str, 
                              focal_start_coord: int, focal_end_coord: int) -> Tuple[Dict[str, str], Set[str], Dict[str, Tuple[str, int, int]]]:
     """
-    Perform gene calling using pyrodigal on a FASTA file.
+    Perform bacterial gene calling using pyrodigal on a FASTA file.
     
     Parameters
     ----------
@@ -113,17 +120,23 @@ def gene_call_using_pyrodigal(genome_fasta_file: str, focal_scaffold: str,
     focal_scaffold : str
         Scaffold identifier for the focal region
     focal_start_coord : int
-        Start coordinate of the focal region
+        Start coordinate of the focal region (1-based)
     focal_end_coord : int
-        End coordinate of the focal region
+        End coordinate of the focal region (inclusive)
     
     Returns
     -------
-    Tuple[Dict[str, str], Set[str], Dict[str, Tuple[str, int, int]]]
-        Tuple containing:
-        - locus_tag_sequences: Dictionary mapping locus tags to sequences
-        - focal_lts: Set of locus tags in the focal region
-        - gene_coords: Dictionary mapping locus tags to (scaffold, start, end)
+    locus_tag_sequences : Dict[str, str]
+        Dictionary mapping locus tags to nucleotide sequences
+    focal_lts : Set[str]
+        Set of locus tags in the focal region
+    gene_coords : Dict[str, Tuple[str, int, int]]
+        Dictionary mapping locus tags to (scaffold, start, end) tuples
+    
+    Notes
+    -----
+    Trains pyrodigal on the full genome before predicting genes. Generated
+    locus tags follow the format 'CDS_N' where N is an integer.
     """
     locus_tag_sequences = {}
     focal_lts = set()
@@ -187,7 +200,7 @@ def check_is_genbank_with_cds(gbk_file: str) -> bool:
     Parameters
     ----------
     gbk_file : str
-        Path to the file to check
+        Path to the file to check (may be gzipped)
     
     Returns
     -------
@@ -220,7 +233,7 @@ def check_is_genbank_with_cds(gbk_file: str) -> bool:
 
 def confirm_fasta(fasta_file: str) -> bool:
     """
-    Check if a file is a valid FASTA file.
+    Check if a file is a valid FASTA file with at least one sequence.
     
     Parameters
     ----------
@@ -230,7 +243,7 @@ def confirm_fasta(fasta_file: str) -> bool:
     Returns
     -------
     bool
-        True if the file is a valid FASTA file, False otherwise
+        True if the file is a valid FASTA file with at least one record, False otherwise
     """
     try:
         fasta_recs = 0
@@ -249,18 +262,20 @@ def calculate_n50(scaffold_lengths: List[int]) -> int:
     """
     Calculate the N50 statistic for an assembly.
     
-    N50 is defined as the sequence length of the shortest contig at 50% of the 
-    total genome length.
-    
     Parameters
     ----------
     scaffold_lengths : List[int]
-        List of scaffold/contig lengths
+        List of scaffold/contig lengths in base pairs
     
     Returns
     -------
     int
-        The N50 value
+        The N50 value in base pairs
+    
+    Notes
+    -----
+    N50 is defined as the sequence length of the shortest contig at 50% of the 
+    total genome length. Returns 0 for empty input.
     """
     if not scaffold_lengths:
         return 0
@@ -281,24 +296,26 @@ def calculate_n50(scaffold_lengths: List[int]) -> int:
 def check_assembly_quality(genome_file: str, focal_region_size: int, 
                            verbose: bool = True) -> None:
     """
-    Check if the assembly N50 is larger than the focal region size.
-    
-    If the N50 is smaller than or equal to the focal region size, this indicates
-    the assembly is too fragmented for reliable analysis and an error is raised.
+    Verify that assembly quality is sufficient for the requested focal region size.
     
     Parameters
     ----------
     genome_file : str
-        Path to the genome file (GenBank or FASTA)
+        Path to the genome file (GenBank or FASTA, may be gzipped)
     focal_region_size : int
         Size of the focal region in base pairs
     verbose : bool, optional
-        Whether to print progress messages, by default True
+        Whether to print progress messages to stderr, by default True
     
     Raises
     ------
     SystemExit
-        If N50 is less than or equal to the focal region size
+        If N50 is less than or equal to the focal region size, or if no sequences found
+    
+    Notes
+    -----
+    The assembly is considered too fragmented if N50 <= focal_region_size, as this
+    indicates insufficient contiguity for reliable sequential sampling analysis.
     """
     try:
         scaffold_lengths = []

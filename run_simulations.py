@@ -22,7 +22,7 @@ from src.codoff.codoff import codoff_main_coords
 
 def run_one_simulation(args_tuple):
     """Helper function for parallel execution - must be at module level for pickling."""
-    genome_file, scaffold_id, start, end, num_sims, sequential_sampling, seed = args_tuple
+    genome_file, scaffold_id, start, end, num_sims, seed = args_tuple
     try:
         result = codoff_main_coords(
             full_genome_file=str(genome_file),
@@ -31,7 +31,6 @@ def run_one_simulation(args_tuple):
             focal_end_coord=end,
             verbose=False,
             num_sims=num_sims,
-            sequential_sampling=sequential_sampling,
             seed=seed
         )
         return result
@@ -55,8 +54,6 @@ def main():
     parser.add_argument('-x', '--seed', type=int, default=None, help='Random seed for reproducible region selection')
     
     args = parser.parse_args()
-    
-    sequential_sampling = True
     
     # Set the master seed for the simulation initiator if provided
     if args.seed is not None:
@@ -95,7 +92,7 @@ def main():
         # Generate a unique seed for each simulation run
         # This makes each run reproducible, but ensures they are different
         run_seed = random.randint(0, 2**32 - 1)
-        tasks.append((args.genome_file, scaffold_id, start, end, args.num_codoff_sims, sequential_sampling, run_seed))
+        tasks.append((args.genome_file, scaffold_id, start, end, args.num_codoff_sims, run_seed))
     
     # Run simulations (with or without parallelization)
     percentiles = []

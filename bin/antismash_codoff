@@ -46,6 +46,9 @@ def create_parser():
 	parser.add_argument('-x', '--seed', type=int,
 		help="Random seed for reproducible results [Default: 42].",
 		required=False, default=42)
+	parser.add_argument('-m', '--max-focal-cds-fraction', type=float,
+		help="Maximum allowed fraction of total genome CDS length for focal region [Default: 0.05].",
+		required=False, default=0.05)
 
 	args = parser.parse_args()
 	return args
@@ -67,13 +70,13 @@ def main():
 	antismash_dir = os.path.abspath(myargs.antismash_dir) + '/'
 	output_dir = os.path.abspath(myargs.output_dir) + '/'
 	num_sims = myargs.num_sims
-	sequential_sampling = True
 	seed = myargs.seed
+	max_focal_cds_fraction = myargs.max_focal_cds_fraction
 
 	try:
 		assert(os.path.isdir(antismash_dir))
 	except:
-		sys.stderr.write('Error: Unalbe to validate antiSMASH directory exists.\n')
+		sys.stderr.write('Error: Unable to validate antiSMASH directory exists.\n')
 		sys.exit(1)
 
 	if os.path.isdir(output_dir):
@@ -102,7 +105,7 @@ def main():
 		sys.exit(1)
 	
 	if len(bgc_gbks) == 0:
-		sys.stderr.write('Unalbe to find any BGC GenBank files in antiSMASH results directory.\n')
+		sys.stderr.write('Unable to find any BGC GenBank files in antiSMASH results directory.\n')
 		sys.exit(1)
 	
 	msg = "Running codoff on %d BGC regions in %s" % (len(bgc_gbks), antismash_dir) 
@@ -132,9 +135,9 @@ def main():
 				plot_outfile=bgc_plotfile,
 				verbose=False,
 				num_sims=num_sims,
-				sequential_sampling=sequential_sampling,
 				genome_data=genome_data,
-				seed=seed
+				seed=seed,
+				max_focal_cds_fraction=max_focal_cds_fraction
 			)
 			msg = 'Successfully ran codoff for %s.' % bgc_gbk_name
 			sys.stdout.write(msg + '\n')

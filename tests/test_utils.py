@@ -55,7 +55,7 @@ def _run_direct_analysis(genome_data, focal_data, num_sims=100, verbose=False):
     
     # Return simplified result for testing
     return {
-        'empirical_pvalue': 0.5,  # Dummy value for testing
+        'empirical_freq': 0.5,    # Dummy value for testing
         'cosine_distance': 0.1,   # Dummy value for testing
         'rho': 0.8,               # Dummy value for testing
         'focal_region_codons': [cod_freq_dict_focal[cod] for cod in sorted(genome_data['all_cods'])]

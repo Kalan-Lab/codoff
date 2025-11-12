@@ -15,14 +15,14 @@ import gzip
 import math
 import traceback
 from collections import defaultdict
-from operator import itemgetter
-from typing import Dict, Any, Optional, List, Set
+from typing import Dict, Any, Optional, List, Set, Tuple
 
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 from Bio import SeqIO
 from Bio.Seq import Seq
+from Bio.SeqFeature import BeforePosition, AfterPosition
 from scipy import stats, spatial
 
 from codoff import util
@@ -30,21 +30,58 @@ from codoff import util
 # Constants
 VALID_BASES = {'A', 'C', 'G', 'T'}
 
+def is_partial_feature(feature) -> bool:
+    """
+    Check if a CDS feature has fuzzy/partial boundaries.
+    
+    Parameters
+    ----------
+    feature : Bio.SeqFeature.SeqFeature
+        The feature to check for partial boundaries
+    
+    Returns
+    -------
+    bool
+        True if the feature has partial boundaries (< or > in GenBank notation), 
+        False otherwise
+    
+    Notes
+    -----
+    Checks both the main location and all parts for compound locations (joins).
+    Partial features are typically indicated by BeforePosition or AfterPosition
+    in Biopython's location objects.
+    """
+    # Check the main location
+    if isinstance(feature.location.start, (BeforePosition,)) or isinstance(feature.location.end, (AfterPosition,)):
+        return True
+    
+    # Check all parts for compound locations (joins)
+    if hasattr(feature.location, 'parts'):
+        for part in feature.location.parts:
+            if isinstance(part.start, (BeforePosition,)) or isinstance(part.end, (AfterPosition,)):
+                return True
+    
+    return False
+
 def check_data_type(variable: Any, expected_type: type) -> bool:
     """
-    Check if the variable is of the expected type.
+    Check if a variable matches the expected type.
     
     Parameters
     ----------
     variable : Any
         The variable to check
     expected_type : type
-        The expected type of the variable
+        The expected type (e.g., str, int, list, dict)
     
     Returns
     -------
     bool
         True if the variable is of the expected type, False otherwise
+    
+    Notes
+    -----
+    Wrapper around isinstance() for consistent type checking throughout the codebase.
     """
     return isinstance(variable, expected_type)
 
@@ -66,10 +103,13 @@ def extract_genome_codon_data(full_genome_file: str,
     Dict[str, Any]
         Dictionary containing:
         - 'locus_tag_sequences': dict mapping locus_tag to nucleotide sequence
-        - 'gene_codons': dict mapping locus_tag to codon counts
+        - 'gene_codons': dict mapping locus_tag to codon counts (dict of dicts)
         - 'gene_list': list of all locus_tags
         - 'all_cods': set of all codons found
-        - 'total_cds_length': total CDS length in the genome
+        - 'all_codon_counts': dict mapping codon to total genome-wide count
+        - 'total_cds_length': total CDS length in the genome (int)
+        - 'gene_coords': dict mapping locus_tag to (scaffold_name, start, end) tuple
+        - 'scaffold_lengths': dict mapping scaffold_name to scaffold length
     """
     try:
         assert check_data_type(full_genome_file, str)
@@ -86,6 +126,8 @@ def extract_genome_codon_data(full_genome_file: str,
     all_cods = set()
     all_codon_counts = defaultdict(int)
     total_cds_length = 0
+    gene_coords = {}
+    scaffold_lengths = {}
     
     try:
         ofgbk = None
@@ -95,10 +137,16 @@ def extract_genome_codon_data(full_genome_file: str,
             ofgbk = open(full_genome_file)
         
         for rec in SeqIO.parse(ofgbk, 'genbank'):
-            full_sequence = str(rec.seq)
+            scaffold_name = rec.id
+            scaffold_lengths[rec.id] = len(rec.seq)
             for feature in rec.features:
                 if not feature.type == 'CDS': 
                     continue
+                
+                # Skip partial CDS features (those with fuzzy boundaries like < or >)
+                if is_partial_feature(feature):
+                    continue
+                
                 locus_tag = None
                 try:
                     locus_tag = feature.qualifiers.get('locus_tag')[0]
@@ -109,18 +157,11 @@ def extract_genome_codon_data(full_genome_file: str,
                         locus_tag = feature.qualifiers.get('protein_id')[0]
                 assert locus_tag is not None
                 
-                all_coords, start, end, direction, is_multi_part = util.parseCDSCoord(str(feature.location))
-                if end >= len(full_sequence): 
-                    end = len(full_sequence)
-                nucl_seq = ''
-                for sc, ec, dc in sorted(all_coords, key=itemgetter(0), reverse=False):
-                    if ec >= len(full_sequence):
-                        nucl_seq += full_sequence[sc - 1:]
-                    else:
-                        nucl_seq += full_sequence[sc - 1:ec]
+                all_coords, start, end, direction, is_multi_part = util.parseCDSCoord(feature.location)
+                gene_coords[locus_tag] = (scaffold_name, start, end)
 
-                if direction == '-':
-                    nucl_seq = str(Seq(nucl_seq).reverse_complement())
+                # Use Biopython's robust .extract() method instead of manual slicing
+                nucl_seq = str(feature.extract(rec.seq))
                 locus_tag_sequences[locus_tag] = nucl_seq
 
                 if len(str(nucl_seq)) % 3 == 0:
@@ -155,33 +196,45 @@ def extract_genome_codon_data(full_genome_file: str,
         'gene_list': gene_list,
         'all_cods': all_cods,
         'all_codon_counts': dict(all_codon_counts),
-        'total_cds_length': total_cds_length
+        'total_cds_length': total_cds_length,
+        'gene_coords': gene_coords,
+        'scaffold_lengths': scaffold_lengths
     }
 
 
-def process_bgc_with_cached_data(genome_data: Dict[str, Any], focal_genbank_files: List[str], outfile: Optional[str] = None, plot_outfile: Optional[str] = None, verbose: bool = True, num_sims: int = 10000) -> Dict[str, Any]:
+def process_bgc_with_cached_data(genome_data: Dict[str, Any], focal_genbank_files: List[str], outfile: Optional[str] = None, plot_outfile: Optional[str] = None, verbose: bool = True, num_sims: int = 10000, seed: Optional[int] = None, max_focal_cds_fraction: float = 0.05) -> Dict[str, Any]:
     """
     Process BGC regions using pre-computed genome data to avoid redundant computation.
     
     Parameters
     ----------
     genome_data : dict
-        Pre-computed genome data from extract_genome_codon_data()
+        Pre-computed genome data from extract_genome_codon_data(). Should contain:
+        - 'locus_tag_sequences', 'gene_codons', 'gene_list', 'all_cods',
+        - 'all_codon_counts', 'total_cds_length', 'gene_coords', 'scaffold_lengths'
     focal_genbank_files : list
         The list of paths to the GenBank files for the focal region.
-    outfile : str
+    outfile : str, optional
         The path to the output file. If not provided, the output will be 
         printed to stdout.
-    plot_outfile : str
+    plot_outfile : str, optional
         The path to the plot output file. If not provided, no plot will 
         be made.
-    verbose : bool
+    verbose : bool, optional
         Whether to print progress messages to stderr. Default is True.
+    num_sims : int, optional
+        Number of simulations to run, by default 10000
+    seed : int, optional
+        Random seed for reproducible results, by default None
+    max_focal_cds_fraction : float, optional
+        Maximum allowed fraction of total genome CDS length for focal region, by default 0.05 (5%)
     
     Returns
     -------
     dict
-        Result dictionary from _stat_calc_and_simulation()
+        Result dictionary from _stat_calc_and_simulation() containing:
+        - 'empirical_freq', 'cosine_distance', 'rho', 'codon_order',
+        - 'focal_region_codons', 'background_genome_codons'
     """
     try:
         assert check_data_type(focal_genbank_files, list)
@@ -219,6 +272,8 @@ def process_bgc_with_cached_data(genome_data: Dict[str, Any], focal_genbank_file
     all_cods = genome_data['all_cods']
     all_codon_counts = genome_data['all_codon_counts']
     total_cds_length = genome_data['total_cds_length']
+    gene_coords = genome_data['gene_coords']
+    scaffold_lengths = genome_data['scaffold_lengths']
 
     cod_freq_dict_focal = defaultdict(int)
     cod_freq_dict_background = defaultdict(int)
@@ -281,9 +336,11 @@ def process_bgc_with_cached_data(genome_data: Dict[str, Any], focal_genbank_file
             sys.exit(1)
 
         size_comparison = focal_cds_length/total_cds_length
-        if size_comparison >= 0.05:
-            sys.stderr.write('Error: The size of the focal region is >5%% of the full genome. This is not be appropriate for codoff analysis.\n')
+        if size_comparison >= max_focal_cds_fraction:
+            sys.stderr.write(f'Error: The focal region aggregate CDS length is >{max_focal_cds_fraction*100:.1f}%% of the total genome aggregate CDS length. This is not appropriate for codoff analysis.\n')
             sys.stderr.write('Focal region(s): %s\n' % str(focal_genbank_files))
+            sys.stderr.write('Focal region aggregate CDS length: %d bp\n' % focal_cds_length)
+            sys.stderr.write('Total genome aggregate CDS length: %d bp\n' % total_cds_length)
             sys.exit(1)
 
     except Exception:
@@ -291,43 +348,80 @@ def process_bgc_with_cached_data(genome_data: Dict[str, Any], focal_genbank_file
         sys.stderr.write(traceback.format_exc() + '\n')
         sys.exit(1)
 
+    # Determine focal region coordinates for region size
+    min_start = float('inf')
+    max_end = 0
+    for lt in focal_lts:
+        if lt in gene_coords:
+            _, s, e = gene_coords[lt]
+            min_start = min(min_start, s)
+            max_end = max(max_end, e)
+    region_size = max_end - min_start if max_end > min_start else None
+
     # Run rest of codoff using pre-computed data
-    result = _stat_calc_and_simulation(all_cods, cod_freq_dict_focal, cod_freq_dict_background, gene_list, gene_codons, foc_codon_count, all_codon_counts, outfile=outfile, plot_outfile=plot_outfile, verbose=verbose,  num_sims=num_sims)
+    result = _stat_calc_and_simulation(all_cods, cod_freq_dict_focal, cod_freq_dict_background, gene_list, 
+                                       gene_codons, foc_codon_count, all_codon_counts, gene_coords=gene_coords, 
+                                       outfile=outfile, plot_outfile=plot_outfile, verbose=verbose,  
+                                       num_sims=num_sims, focal_region_size=region_size, 
+                                       scaffold_lengths=scaffold_lengths, seed=seed, max_focal_cds_fraction=max_focal_cds_fraction)
+    
+    # Final writing of results
+    if outfile and outfile != 'stdout':
+        _write_output_file(result, outfile)
+    elif outfile == 'stdout':
+        _print_output_stdout(result)
+
     return result
 
 
-def codoff_main_gbk(full_genome_file: str, focal_genbank_files: List[str], outfile: Optional[str] = None, plot_outfile: Optional[str] = None, verbose: bool = True, genome_data: Optional[Dict[str, Any]] = None, num_sims: int = 10000) -> Dict[str, Any]:
+def codoff_main_gbk(full_genome_file: str, focal_genbank_files: List[str], outfile: Optional[str] = None, plot_outfile: Optional[str] = None, verbose: bool = True, genome_data: Optional[Dict[str, Any]] = None, num_sims: int = 10000, seed: Optional[int] = None, max_focal_cds_fraction: float = 0.05) -> Dict[str, Any]:
     """
-    A full genome and a specific region must each be provided in 
-    GenBank format, with locus_tags overlapping. locus_tags in the
-    focal region GenBank that are not in the full genome GenBank will 
-    be ignored.
-
-    It calls the private function _stat_calc_and_simulation() to 
-    perform the main statistical calculations and simulations used 
-    for inference of the empirical P-value.
+    Compare codon usage between a focal genomic region and full genome using GenBank files.
     
-    The function takes the following arguments:
-    * full_genome_file: str
-        The path to the full genome file in GenBank format.
-    * focal_genbank_files: list
-        The list of paths to the GenBank files for the focal region.
-    * outfile: str
-        The path to the output file. If not provided, the output will be 
-        printed to stdout.
-    * plot_outfile: str
-        The path to the plot output file. If not provided, no plot will 
-        be made.
-    * verbose: bool
-        Whether to print progress messages to stderr. Default is True.
-    * genome_data: dict, optional
+    A full genome and a specific region must each be provided in GenBank format, 
+    with locus_tags overlapping. Locus tags in the focal region GenBank that are 
+    not in the full genome GenBank will be ignored. Uses sequential contiguous-window 
+    sampling (v1.2.3+) to perform Monte Carlo simulations.
+    
+    Parameters
+    ----------
+    full_genome_file : str
+        Path to the full genome file in GenBank format
+    focal_genbank_files : List[str]
+        List of paths to the GenBank files for the focal region(s)
+    outfile : str, optional
+        Path to the output file. If not provided, output is printed to stdout
+    plot_outfile : str, optional
+        Path to the plot output file in SVG format. If not provided, no plot is made
+    verbose : bool, optional
+        Whether to print progress messages to stderr, by default True
+    genome_data : Dict[str, Any], optional
         Pre-computed genome data from extract_genome_codon_data() to avoid 
         redundant computation. If provided, full_genome_file will be ignored.
+        Must contain coordinate information (gene_coords, scaffold_lengths)
+    num_sims : int, optional
+        Number of simulations to run, by default 10000
+    seed : int, optional
+        Random seed for reproducible results, by default None
+    max_focal_cds_fraction : float, optional
+        Maximum allowed fraction of total genome CDS length for focal region, by default 0.05 (5%)
+    
+    Returns
+    -------
+    Dict[str, Any]
+        Results dictionary containing:
+        - 'empirical_freq': proportion of simulations as or more extreme than observed
+        - 'cosine_distance': cosine distance between focal and background
+        - 'rho': Spearman's correlation coefficient
+        - 'codon_order': list of codons in order
+        - 'focal_region_codons': codon frequencies in focal region
+        - 'background_genome_codons': codon frequencies in background
     """
     
     # If genome_data is provided, use it instead of processing the full_genome_file
     if genome_data is not None:
-        return process_bgc_with_cached_data(genome_data, focal_genbank_files, outfile, plot_outfile, verbose, num_sims)
+        result = process_bgc_with_cached_data(genome_data, focal_genbank_files, outfile, plot_outfile, verbose, num_sims, seed=seed, max_focal_cds_fraction=max_focal_cds_fraction)
+        return result
     
     try:
         assert check_data_type(full_genome_file, str)
@@ -374,6 +468,8 @@ def codoff_main_gbk(full_genome_file: str, focal_genbank_files: List[str], outfi
     gene_codons = defaultdict(lambda: defaultdict(int))
     gene_list = []
     foc_codon_count = 0
+    gene_coords = {}
+    scaffold_lengths = {}
     try:
         # parse GenBank files of focal regions for locus_tags
         focal_lts = set()
@@ -404,7 +500,7 @@ def codoff_main_gbk(full_genome_file: str, focal_genbank_files: List[str], outfi
         focal_cds_length = 0
         total_cds_length = 0 
         if not os.path.isfile(full_genome_file):
-            sys.stderr.write('Unable to find full-genome GenBank file %s.\n' % foc_gbk)
+            sys.stderr.write('Unable to find full-genome GenBank file %s.\n' % full_genome_file)
             sys.exit(1)
 
         ofgbk = None
@@ -414,8 +510,15 @@ def codoff_main_gbk(full_genome_file: str, focal_genbank_files: List[str], outfi
             ofgbk = open(full_genome_file)
         for rec in SeqIO.parse(ofgbk, 'genbank'):
             full_sequence = str(rec.seq)
+            scaffold_name = rec.id
+            scaffold_lengths[rec.id] = len(rec.seq)
             for feature in rec.features:
                 if not feature.type == 'CDS': continue
+                
+                # Skip partial CDS features (those with fuzzy boundaries like < or >)
+                if is_partial_feature(feature):
+                    continue
+                
                 locus_tag = None
                 try:
                     locus_tag = feature.qualifiers.get('locus_tag')[0]
@@ -425,17 +528,12 @@ def codoff_main_gbk(full_genome_file: str, focal_genbank_files: List[str], outfi
                     except Exception:
                         locus_tag = feature.qualifiers.get('protein_id')[0]
                 assert locus_tag is not None
-                all_coords, start, end, direction, is_multi_part = util.parseCDSCoord(str(feature.location))
+                all_coords, start, end, direction, is_multi_part = util.parseCDSCoord(feature.location)
+                gene_coords[locus_tag] = (scaffold_name, start, end)
                 if end >= len(full_sequence): end = len(full_sequence)
-                nucl_seq = ''
-                for sc, ec, dc in sorted(all_coords, key=itemgetter(0), reverse=False):
-                    if ec >= len(full_sequence):
-                        nucl_seq += full_sequence[sc - 1:]
-                    else:
-                        nucl_seq += full_sequence[sc - 1:ec]
-
-                if direction == '-':
-                    nucl_seq = str(Seq(nucl_seq).reverse_complement())
+                
+                # Use Biopython's robust .extract() method instead of manual slicing
+                nucl_seq = str(feature.extract(rec.seq))
                 locus_tag_sequences[locus_tag] = nucl_seq
 
                 if len(str(nucl_seq)) % 3 == 0:
@@ -463,9 +561,11 @@ def codoff_main_gbk(full_genome_file: str, focal_genbank_files: List[str], outfi
             sys.exit(1)
 
         size_comparison = focal_cds_length/total_cds_length
-        if size_comparison >= 0.05:
-            sys.stderr.write('Error: The size of the focal region is >5%% of the full genome. This is not be appropriate for codoff analysis.\n')
+        if size_comparison >= max_focal_cds_fraction:
+            sys.stderr.write(f'Error: The focal region aggregate CDS length is >{max_focal_cds_fraction*100:.1f}%% of the total genome aggregate CDS length. This is not appropriate for codoff analysis.\n')
             sys.stderr.write('Focal region(s): %s\n' % str(focal_genbank_files))
+            sys.stderr.write('Focal region aggregate CDS length: %d bp\n' % focal_cds_length)
+            sys.stderr.write('Total genome aggregate CDS length: %d bp\n' % total_cds_length)
             sys.exit(1)
 
         # get codon frequencies for CDS in BGC and background genome
@@ -492,44 +592,83 @@ def codoff_main_gbk(full_genome_file: str, focal_genbank_files: List[str], outfi
         sys.stderr.write(traceback.format_exc() + '\n')
         sys.exit(1)
 
+    # Determine region size
+    min_start = float('inf')
+    max_end = 0
+    try:
+        for foc_gbk in focal_genbank_files:
+            for rec in SeqIO.parse(gzip.open(foc_gbk, 'rt') if foc_gbk.endswith('.gz') else open(foc_gbk), 'genbank'):
+                for feature in rec.features:
+                    if feature.type == 'CDS':
+                        _, start, end, _, _ = util.parseCDSCoord(feature.location)
+                        min_start = min(min_start, start)
+                        max_end = max(max_end, end)
+        region_size = max_end - min_start if max_end > min_start else None
+    except Exception as e:
+        sys.stderr.write(f"Warning: Could not determine region size: {e}\n")
+        region_size = None
+ 
     # run rest of codoff (separate function to avoid redundancy between codoff_main_gbk() and codoff_main_coords()
     # Use all genes for simulation pool to match v1.2.1 behavior
-    result = _stat_calc_and_simulation(all_cods, cod_freq_dict_focal, cod_freq_dict_background, gene_list, gene_codons, foc_codon_count, all_codon_counts, outfile=outfile, plot_outfile=plot_outfile, verbose=verbose,  num_sims=num_sims)
+    result = _stat_calc_and_simulation(
+        all_cods, cod_freq_dict_focal, cod_freq_dict_background, gene_list, gene_codons, 
+        foc_codon_count, all_codon_counts, gene_coords=gene_coords, 
+        outfile=outfile, plot_outfile=plot_outfile, verbose=verbose,  num_sims=num_sims,
+        focal_region_size=region_size, scaffold_lengths=scaffold_lengths,
+        seed=seed, max_focal_cds_fraction=max_focal_cds_fraction
+    )
+    
+    # Final writing of results
+    if outfile and outfile != 'stdout':
+        _write_output_file(result, outfile)
+    elif outfile == 'stdout':
+        _print_output_stdout(result)
+
     return result
 
 
-def codoff_main_coords(full_genome_file: str, focal_scaffold: str, focal_start_coord: int, focal_end_coord: int, outfile: Optional[str] = None, plot_outfile: Optional[str] = None, verbose: bool = True, num_sims: int = 10000) -> Dict[str, Any]:
+def codoff_main_coords(full_genome_file: str, focal_scaffold: str, focal_start_coord: int, focal_end_coord: int, outfile: Optional[str] = None, plot_outfile: Optional[str] = None, verbose: bool = True, num_sims: int = 10000, seed: Optional[int] = None, max_focal_cds_fraction: float = 0.05) -> Dict[str, Any]:
     """
-    A full genome file can be provided in either GenBank or FASTA 
-    format. If the latter, pyrodigal is used for gene calling, 
-    so it only works for bacteria.
+    Compare codon usage between a focal region and full genome using coordinates.
     
-    Afterwards, coordinates provided by users for the focal 
-    region of interest are used to partition which locus tags for
-    CDS features belong to the focal region and which belong to the
-    background genome.
-
-    It calls the private function _stat_calc_and_simulation() to 
-    perform the main statistical calculations and simulations used 
-    for inference of the empirical P-value.
+    A full genome file can be provided in either GenBank or FASTA format. If FASTA,
+    pyrodigal is used for gene calling (bacteria only). Coordinates provided by users
+    determine which CDS features belong to the focal region versus the background genome.
+    Uses sequential contiguous-window sampling (v1.2.3+) for Monte Carlo simulations.
     
-    The function takes the following arguments:
-    * full_genome_file: str
-        The path to the full genome file in GenBank format.
-    * focal_scaffold: str
-        The scaffold identifier for the focal region.
-    * focal_start_coord: int
-        The start coordinate for the focal region.  
-    * focal_end_coord: int
-        The end coordinate for the focal region.
-    * outfile: str
-        The path to the output file. If not provided, the output will be 
-        printed to stdout.
-    * plot_outfile: str
-        The path to the plot output file. If not provided, no plot will
-        be made.
-    * verbose: bool
-        Whether to print progress messages to stderr. Default is True.
+    Parameters
+    ----------
+    full_genome_file : str
+        Path to the full genome file in GenBank or FASTA format
+    focal_scaffold : str
+        Scaffold identifier for the focal region
+    focal_start_coord : int
+        Start coordinate for the focal region (1-based)
+    focal_end_coord : int
+        End coordinate for the focal region (inclusive)
+    outfile : str, optional
+        Path to the output file. If not provided, output is printed to stdout
+    plot_outfile : str, optional
+        Path to the plot output file in SVG format. If not provided, no plot is made
+    verbose : bool, optional
+        Whether to print progress messages to stderr, by default True
+    num_sims : int, optional
+        Number of simulations to run, by default 10000
+    seed : int, optional
+        Random seed for reproducible results, by default None
+    max_focal_cds_fraction : float, optional
+        Maximum allowed fraction of total genome CDS length for focal region, by default 0.05 (5%)
+    
+    Returns
+    -------
+    Dict[str, Any]
+        Results dictionary containing:
+        - 'empirical_freq': proportion of simulations as or more extreme than observed
+        - 'cosine_distance': cosine distance between focal and background
+        - 'rho': Spearman's correlation coefficient
+        - 'codon_order': list of codons in order
+        - 'focal_region_codons': codon frequencies in focal region
+        - 'background_genome_codons': codon frequencies in background
     """
     
     try:
@@ -571,6 +710,10 @@ def codoff_main_coords(full_genome_file: str, focal_scaffold: str, focal_start_c
         sys.stderr.write(traceback.format_exc() + '\n')
         sys.exit(1)
 
+    # Check assembly quality - N50 must be larger than focal region size
+    focal_region_size = focal_end_coord - focal_start_coord
+    util.check_assembly_quality(full_genome_file, focal_region_size, verbose=verbose)
+
     cod_freq_dict_focal = defaultdict(int)
     cod_freq_dict_background = defaultdict(int)
     all_cods = set()
@@ -578,6 +721,8 @@ def codoff_main_coords(full_genome_file: str, focal_scaffold: str, focal_start_c
     gene_codons = defaultdict(lambda: defaultdict(int))
     gene_list = []
     foc_codon_count = 0
+    gene_coords = {}
+    scaffold_lengths = {}
 
     if util.checkIsGenBankWithCDS(full_genome_file):
         try:
@@ -594,8 +739,15 @@ def codoff_main_coords(full_genome_file: str, focal_scaffold: str, focal_start_c
                 ofgbk = open(full_genome_file)
             for rec in SeqIO.parse(ofgbk, 'genbank'):
                 full_sequence = str(rec.seq)
+                scaffold_name = rec.id
+                scaffold_lengths[rec.id] = len(rec.seq)
                 for feature in rec.features:
                     if not feature.type == 'CDS': continue
+                    
+                    # Skip partial CDS features (those with fuzzy boundaries like < or >)
+                    if is_partial_feature(feature):
+                        continue
+                    
                     locus_tag = None
                     try:
                         locus_tag = feature.qualifiers.get('locus_tag')[0]
@@ -605,26 +757,26 @@ def codoff_main_coords(full_genome_file: str, focal_scaffold: str, focal_start_c
                         except Exception:
                             locus_tag = feature.qualifiers.get('protein_id')[0]
                     assert locus_tag is not None
-                    all_coords, start, end, direction, is_multi_part = util.parseCDSCoord(str(feature.location))
+                    all_coords, start, end, direction, is_multi_part = util.parseCDSCoord(feature.location)
+                    gene_coords[locus_tag] = (scaffold_name, start, end)
                     if end >= len(full_sequence): end = len(full_sequence)
-                    nucl_seq = ''
-                    for sc, ec, dc in sorted(all_coords, key=itemgetter(0), reverse=False):
-                        if ec >= len(full_sequence):
-                            nucl_seq += full_sequence[sc - 1:]
-                        else:
-                            nucl_seq += full_sequence[sc - 1:ec]
-
-                    if direction == '-':
-                        nucl_seq = str(Seq(nucl_seq).reverse_complement())
+                    
+                    # Use Biopython's robust .extract() method instead of manual slicing
+                    nucl_seq = str(feature.extract(rec.seq))
                     locus_tag_sequences[locus_tag] = nucl_seq
+                    
+                    # Correctly identify focal genes based on coordinates
                     if rec.id == focal_scaffold and start >= focal_start_coord and end <= focal_end_coord:
                         focal_lts.add(locus_tag)
 
                     if len(str(nucl_seq)) % 3 == 0:
-                        if locus_tag in focal_lts:
-                            focal_cds_length += len(nucl_seq)
                         total_cds_length += len(nucl_seq)
             ofgbk.close()
+
+            # Recalculate focal_cds_length based on identified focal_lts
+            for lt in focal_lts:
+                if len(locus_tag_sequences.get(lt, '')) % 3 == 0:
+                    focal_cds_length += len(locus_tag_sequences[lt])
             
             # Check if any focal locus tags were found and issue warning if none
             if not focal_lts and verbose:
@@ -641,10 +793,10 @@ def codoff_main_coords(full_genome_file: str, focal_scaffold: str, focal_start_c
                 sys.exit(1)
             
             size_comparison = focal_cds_length/total_cds_length
-            if size_comparison >= 0.05:
-                sys.stderr.write('Error: The size of the focal region is >5%% of the full genome. This is not be appropriate for codoff analysis\n')
-                sys.stderr.write('Focal region size: %d\n' % focal_cds_length)
-                sys.stderr.write('Genome size: %d\n' % total_cds_length)
+            if size_comparison >= max_focal_cds_fraction:
+                sys.stderr.write(f'Error: The focal region aggregate CDS length is >{max_focal_cds_fraction*100:.1f}%% of the total genome aggregate CDS length. This is not appropriate for codoff analysis\n')
+                sys.stderr.write('Focal region aggregate CDS length: %d bp\n' % focal_cds_length)
+                sys.stderr.write('Total genome aggregate CDS length: %d bp\n' % total_cds_length)
                 sys.exit(1)
             
             # get codon frequencies for CDS in focal and background genome
@@ -669,6 +821,24 @@ def codoff_main_coords(full_genome_file: str, focal_scaffold: str, focal_start_c
             sys.stderr.write('Issues with determinining codon usage info for inputs with full genome provided as GenBank.\n')
             sys.stderr.write(traceback.format_exc() + '\n')
             sys.exit(1)
+        
+        # run rest of codoff
+        result = _stat_calc_and_simulation(
+            all_cods, cod_freq_dict_focal, cod_freq_dict_background, gene_list, gene_codons, 
+            foc_codon_count, all_codon_counts, gene_coords=gene_coords, 
+            outfile=outfile, plot_outfile=plot_outfile, verbose=verbose,  num_sims=num_sims,
+            focal_region_size=(focal_end_coord - focal_start_coord),
+            scaffold_lengths=scaffold_lengths,
+            seed=seed, max_focal_cds_fraction=max_focal_cds_fraction
+        )
+        
+        # Final writing of results
+        if outfile and outfile != 'stdout':
+            _write_output_file(result, outfile)
+        elif outfile == 'stdout':
+            _print_output_stdout(result)
+
+        return result
 
     else:
         try:
@@ -680,7 +850,12 @@ def codoff_main_coords(full_genome_file: str, focal_scaffold: str, focal_start_c
                 sys.exit(1)            
         
             # parse nucleotide coding sequences from full-genome Genbank
-            locus_tag_sequences, focal_lts = util.geneCallUsingPyrodigal(full_genome_file, focal_scaffold, focal_start_coord, focal_end_coord)
+            locus_tag_sequences, focal_lts, gene_coords = util.geneCallUsingPyrodigal(full_genome_file, focal_scaffold, focal_start_coord, focal_end_coord)
+            
+            # Extract scaffold lengths from FASTA file
+            with open(full_genome_file) as off:
+                for rec in SeqIO.parse(off, 'fasta'):
+                    scaffold_lengths[rec.id] = len(rec.seq)
             
             total_cds_length = 0
             focal_cds_length = 0
@@ -702,10 +877,10 @@ def codoff_main_coords(full_genome_file: str, focal_scaffold: str, focal_start_c
                 sys.exit(1)
             
             size_comparison = focal_cds_length/total_cds_length
-            if size_comparison >= 0.05:
-                sys.stderr.write('Error: The size of the focal region is >5%% of the full genome. This is not be appropriate for codoff analysis.\n')
-                sys.stderr.write('Focal region size: %s\n' % str(focal_cds_length))
-                sys.stderr.write('Genome size: %s\n' % str(total_cds_length))
+            if size_comparison >= max_focal_cds_fraction:
+                sys.stderr.write(f'Error: The focal region aggregate CDS length is >{max_focal_cds_fraction*100:.1f}%% of the total genome aggregate CDS length. This is not appropriate for codoff analysis.\n')
+                sys.stderr.write('Focal region aggregate CDS length: %d bp\n' % focal_cds_length)
+                sys.stderr.write('Total genome aggregate CDS length: %d bp\n' % total_cds_length)
                 sys.exit(1)    
 
             # get codon frequencies for CDS in focal and background genome
@@ -734,32 +909,132 @@ def codoff_main_coords(full_genome_file: str, focal_scaffold: str, focal_start_c
         
         # run rest of codoff (separate function to avoid redundancy between codoff_main_gbk() and codoff_main_coords()
         # Use all genes for simulation pool to match v1.2.1 behavior
-        result = _stat_calc_and_simulation(all_cods, cod_freq_dict_focal, cod_freq_dict_background, gene_list, gene_codons, foc_codon_count, all_codon_counts, outfile=outfile, plot_outfile=plot_outfile, verbose=verbose,  num_sims=num_sims)
+        result = _stat_calc_and_simulation(
+            all_cods, cod_freq_dict_focal, cod_freq_dict_background, gene_list, gene_codons, 
+            foc_codon_count, all_codon_counts, gene_coords=gene_coords, 
+            outfile=outfile, plot_outfile=plot_outfile, verbose=verbose,  num_sims=num_sims,
+            focal_region_size=(focal_end_coord - focal_start_coord),
+            scaffold_lengths=scaffold_lengths,
+            seed=seed, max_focal_cds_fraction=max_focal_cds_fraction
+        )
+        
+        # Final writing of results
+        if outfile and outfile != 'stdout':
+            _write_output_file(result, outfile)
+        elif outfile == 'stdout':
+            _print_output_stdout(result)
+
         return result
     
     
-def _stat_calc_and_simulation(all_cods: Set[str], cod_freq_dict_focal: Dict[str, int], cod_freq_dict_background: Dict[str, int], gene_list: List[str], gene_codons: Dict[str, Dict[str, int]], foc_codon_count: int, all_codon_counts: Dict[str, int], outfile: Optional[str] = None, plot_outfile: Optional[str] = None, verbose: bool = True, num_sims: int = 10000) -> Dict[str, Any]:
+def _print_output_stdout(result: Dict[str, Any]) -> None:
+    """
+    Print analysis results to stdout in tab-separated format.
+    
+    Parameters
+    ----------
+    result : Dict[str, Any]
+        Results dictionary from _stat_calc_and_simulation()
+    """
+    percentile = result['empirical_freq'] * 100.0
+    sys.stdout.write(f"Discordance Percentile\t{round(percentile, 2)}\n")
+    sys.stdout.write(f"Cosine Distance\t{round(result['cosine_distance'], 3)}\n")
+    sys.stdout.write(f"Spearman's Rho\t{round(result['rho'], 3)}\n")
+    sys.stdout.write(f"Codons\t{', '.join(result['codon_order'])}\n")
+    sys.stdout.write(f"Focal Region Codon Frequencies\t{', '.join(map(str, result['focal_region_codons']))}\n")
+    sys.stdout.write(f"Background Genome Codon Frequencies\t{', '.join(map(str, result['background_genome_codons']))}\n")
+
+
+def _write_output_file(result: Dict[str, Any], outfile: str) -> None:
+    """
+    Write analysis results to a file in tab-separated format.
+    
+    Parameters
+    ----------
+    result : Dict[str, Any]
+        Results dictionary from _stat_calc_and_simulation()
+    outfile : str
+        Path to the output file
+    """
+    try:
+        with open(outfile, 'w') as f:
+            percentile = result['empirical_freq'] * 100.0
+            f.write(f"Discordance Percentile\t{round(percentile, 2)}\n")
+            f.write(f"Cosine Distance\t{round(result['cosine_distance'], 3)}\n")
+            f.write(f"Spearman's Rho\t{round(result['rho'], 3)}\n")
+            f.write(f"Codons\t{', '.join(result['codon_order'])}\n")
+            f.write(f"Focal Region Codon Frequencies\t{', '.join(map(str, result['focal_region_codons']))}\n")
+            f.write(f"Background Genome Codon Frequencies\t{', '.join(map(str, result['background_genome_codons']))}\n")
+    except Exception as e:
+        sys.stderr.write(f"Issue creating output file: {e}\n")
+        sys.exit(1)
+
+
+def _stat_calc_and_simulation(all_cods: Set[str], cod_freq_dict_focal: Dict[str, int], cod_freq_dict_background: Dict[str, int], gene_list: List[str], gene_codons: Dict[str, Dict[str, int]], foc_codon_count: int, all_codon_counts: Dict[str, int], outfile: Optional[str] = None, plot_outfile: Optional[str] = None, verbose: bool = True, num_sims: int = 10000, gene_coords: Optional[Dict[str, Tuple[str, int, int]]] = None, focal_region_size: Optional[int] = None, scaffold_lengths: Optional[Dict[str, int]] = None, seed: Optional[int] = None, max_focal_cds_fraction: float = 0.05) -> Dict[str, Any]:
     """
     Private function that performs the main statistical calculations and Monte Carlo simulations.
     
-    SIMULATION LOGIC:
-    The simulation uses ALL genes from the genome (both focal and background genes) as the sampling pool.
-    For each simulation iteration:
-    1. Shuffle the complete list of genes (gene_list)
-    2. Select genes sequentially from the shuffled list until we accumulate the same number of codons
-       as in the actual focal region (target_codon_count)
-    3. Calculate codon frequencies for this simulated "focal" region
-    4. Calculate background frequencies as: total_genome_counts - simulated_focal_counts
-    5. Compute cosine distance between simulated focal and background frequencies
-    6. Count how many simulated distances >= observed distance for empirical P-value
+    Parameters
+    ----------
+    all_cods : Set[str]
+        Set of all codons found in the genome
+    cod_freq_dict_focal : Dict[str, int]
+        Codon frequency counts for the focal region
+    cod_freq_dict_background : Dict[str, int]
+        Codon frequency counts for the background genome
+    gene_list : List[str]
+        List of all gene locus tags
+    gene_codons : Dict[str, Dict[str, int]]
+        Dictionary mapping locus tags to their codon counts
+    foc_codon_count : int
+        Total number of codons in the focal region
+    all_codon_counts : Dict[str, int]
+        Genome-wide codon counts
+    outfile : str, optional
+        Output file path
+    plot_outfile : str, optional
+        Plot output file path
+    verbose : bool, optional
+        Whether to print progress messages
+    num_sims : int, optional
+        Number of simulations to run
+    gene_coords : Dict[str, Tuple[str, int, int]], optional
+        Dictionary mapping locus tags to (scaffold, start, end)
+    focal_region_size : int, optional
+        Size of focal region in base pairs
+    scaffold_lengths : Dict[str, int], optional
+        Dictionary mapping scaffold names to their lengths
+    seed : int, optional
+        Random seed for reproducibility
+    max_focal_cds_fraction : float, optional
+        Maximum allowed fraction of total genome CDS length for simulated windows, by default 0.05 (5%)
     
-    This approach tests whether the observed focal region's codon usage is significantly different
-    from what would be expected if we randomly selected the same amount of coding sequence from
-    anywhere in the genome.
+    Returns
+    -------
+    Dict[str, Any]
+        Results dictionary containing empirical_freq, cosine_distance, rho, etc.
+    
+    Notes
+    -----
+    SEQUENTIAL CONTIGUOUS-WINDOW SAMPLING:
+    - Randomly select genomic windows of the same size as the focal region
+    - Extract all genes fully contained within each window
+    - Calculate codon frequencies for each simulated window
+    - Compare focal region against these random windows
+    - Count how many simulated distances >= observed distance
+    - Reports: Discordance Percentile
+    
+    This approach tests whether the observed focal region's codon usage is significantly 
+    different from what would be expected for randomly positioned contiguous genomic 
+    regions of the same size.
+    
+    Requires focal_region_size, gene_coords, and scaffold_lengths to be provided. 
+    If these are not available, the function will exit with an error.
     """
     # Set random seed for reproducible results
-    random.seed(42)
-    np.random.seed(42)
+    if seed is not None:
+        random.seed(seed)
+        np.random.seed(seed)
     
     cod_order = []
     foc_cod_freqs = []
@@ -799,16 +1074,15 @@ def _stat_calc_and_simulation(all_cods: Set[str], cod_freq_dict_focal: Dict[str,
         sys.exit(1)
 
     # Prepare data for simulation
-    # Convert defaultdict to regular dict for consistency
     gene_codons_dict = {gene: dict(codons) for gene, codons in gene_codons.items()}
-    
-    # Build codon index map for consistent vector ordering
     cod_to_idx = {cod: i for i, cod in enumerate(cod_order)}
     
-    # Precompute per-gene count arrays and totals aligned to cod_order
     gene_counts_arrays = []
-    gene_total_codons_list = []
+    valid_gene_list = []
     for gene in gene_list:
+        # Skip genes without codon data (e.g., genes filtered out during processing)
+        if gene not in gene_codons_dict:
+            continue
         counts = np.zeros(len(cod_order), dtype=np.float64)
         gc = gene_codons_dict[gene]
         for c, cnt in gc.items():
@@ -816,100 +1090,119 @@ def _stat_calc_and_simulation(all_cods: Set[str], cod_freq_dict_focal: Dict[str,
             if idx is not None:
                 counts[idx] = float(cnt)
         gene_counts_arrays.append(counts)
-        gene_total_codons_list.append(int(np.sum(counts)))
-    gene_total_codons_arr = np.array(gene_total_codons_list, dtype=np.int64)
+        valid_gene_list.append(gene)
     
-    # Total codon counts vector for background computation
-    # IMPORTANT: This should include ALL genes (focal + background) to match v1.2.1 behavior
-    # where simulation background = total_genome_counts - simulated_focal_counts
+    # Use valid_gene_list for simulations
+    gene_list = valid_gene_list
+    
     total_codon_counts_vec = np.zeros(len(cod_order), dtype=np.float64)
     for i, cod in enumerate(cod_order):
         total_codon_counts_vec[i] = float(all_codon_counts[cod])
     
-    # Target number of codons to sample equals focal codon count
-    target_codon_count = int(foc_codon_count)
+    # Setup ordered genes for sequential sampling
+    sorted_genes = []
+    if gene_coords:
+        # Only include genes that have coordinate data
+        sorted_genes = sorted([g for g in gene_list if g in gene_coords], 
+                             key=lambda g: (gene_coords[g][0], gene_coords[g][1]))
     
-    emp_pval = 0
-    sim_cosine_distances = []
-    
-    # Sequential simulation processing
+    # Simulation containers
+    sim_cosine_distances: List[float] = []
+    extreme_count = 0  # Count of simulations with distance >= observed
+
     if verbose:
         sys.stderr.write('Running simulation sequentially...\n')
         util.printProgressBar(0, 10, prefix = 'Progress:', suffix = 'Complete', length = 50)
+
+    # Verify we have the required data for contiguous-window sampling
+    if focal_region_size is None or not gene_coords or len(sorted_genes) == 0 or not scaffold_lengths:
+        sys.stderr.write('Error: Sequential contiguous-window sampling requires genomic coordinates.\n')
+        sys.stderr.write('Please ensure your GenBank files contain proper CDS feature locations.\n')
+        sys.exit(1)
     
-    # Run sequential simulation (vectorized)
-    for sim in range(num_sims):
-        gene_indices = np.arange(len(gene_counts_arrays))
-        np.random.shuffle(gene_indices)
-        
+    # Filter scaffolds large enough for the region size
+    valid_scaffolds = [(scaf_id, scaf_len) for scaf_id, scaf_len in scaffold_lengths.items() if scaf_len > focal_region_size]
+    
+    if not valid_scaffolds:
+        sys.stderr.write(f'Error: No scaffolds are large enough to contain the focal region size ({focal_region_size} bp).\n')
+        sys.exit(1)
+    
+    # Calculate total genome codons for hyper-dense filtering
+    total_genome_codons = np.sum(total_codon_counts_vec)
+    
+    # Change from 'for' loop to 'while' loop to skip empty windows
+    while len(sim_cosine_distances) < num_sims:
+        # --- UNIFIED SAMPLING LOGIC ---
+        # Pick a random window
+        start_scaffold, scaffold_len = random.choice(valid_scaffolds)
+        start_coord = random.randint(1, scaffold_len - focal_region_size)
+        sim_region_end = start_coord + focal_region_size
+        # ---
+
         sim_focal_vec = np.zeros(len(cod_order), dtype=np.float64)
-        total_collected = 0
-        for idx in gene_indices:
-            cds_total = gene_total_codons_arr[idx]
-            if total_collected + cds_total <= target_codon_count:
-                sim_focal_vec += gene_counts_arrays[idx]
-                total_collected += cds_total
-            else:
-                remaining = target_codon_count - total_collected
-                if remaining > 0 and cds_total > 0:
-                    prop = remaining / float(cds_total)
-                    sim_focal_vec += gene_counts_arrays[idx] * prop
+
+        # Now, find all genes *fully contained* in this random window
+        for gene_locus_tag in sorted_genes:
+            scaffold, gene_start, gene_end = gene_coords[gene_locus_tag]
+
+            if scaffold != start_scaffold:
+                continue
+
+            # Check if gene is fully contained within the [start_coord, sim_region_end] window
+            if gene_start >= start_coord and gene_end <= sim_region_end:
+                original_gene_index = gene_list.index(gene_locus_tag)
+                sim_focal_vec += gene_counts_arrays[original_gene_index]
+
+            # Optimization: if we're past the window, stop looping over this scaffold
+            if gene_start > sim_region_end:
                 break
-        # Compute cosine distance on counts vectors (focal vs background)
+
+        # Skip empty windows (no genes found) to match observed data filtering
+        sim_focal_codons = np.sum(sim_focal_vec)
+        if sim_focal_codons == 0:
+            continue
+        
+        # Skip hyper-dense windows to match observed data filtering
+        if total_genome_codons > 0:
+            size_comparison = sim_focal_codons / total_genome_codons
+            if size_comparison >= max_focal_cds_fraction:
+                continue
+
         sim_background_vec = total_codon_counts_vec - sim_focal_vec
-        # add small epsilon to both to match reference behavior
         eps = 1e-10
-        sim_cosine_distance = spatial.distance.cosine(sim_focal_vec + eps, sim_background_vec + eps)
-        
-        sim_cosine_distances.append(sim_cosine_distance)
-        if sim_cosine_distance >= cosine_distance:
-            emp_pval += 1
-        
-        if verbose and num_sims >= 1000 and (sim + 1) % 1000 == 0:
-            util.printProgressBar(math.floor((sim + 1)/max(1, num_sims//10)), 10, prefix = 'Progress:', suffix = 'Complete', length = 50)
+        sim_dist = spatial.distance.cosine(sim_focal_vec + eps, sim_background_vec + eps)
+        sim_cosine_distances.append(sim_dist)
+        if sim_dist >= cosine_distance:
+            extreme_count += 1
 
-    emp_pval_freq = (emp_pval+1)/(num_sims+1)
+        # Update progress bar using current simulation count
+        current_sim_count = len(sim_cosine_distances)
+        if verbose and num_sims >= 1000 and current_sim_count % 1000 == 0:
+            util.printProgressBar(math.floor(current_sim_count / max(1, num_sims // 10)), 10, prefix = 'Progress:', suffix = 'Complete', length = 50)
 
-    if outfile == 'stdout':
-        sys.stdout.write('Empirical P-value\t%f\n' % emp_pval_freq)
-        sys.stdout.write('Cosine Distance\t%f\n' % round(cosine_distance, 3))
-        sys.stdout.write('Spearman\'s Rho\t%f\n' % round(rho, 3))
-        sys.stdout.write('Codons\t%s\n' % ', '.join(cod_order))
-        sys.stdout.write('Focal Region Codon Frequencies\t%s\n' % ', '.join([str(int(x)) for x in foc_cod_freqs]))
-        sys.stdout.write('Background Genome Codon Frequencies\t%s\n' % ', '.join([str(int(x)) for x in bkg_cod_freqs]))
-    elif outfile is not None:
-        try:
-            outfile = os.path.abspath(outfile)
-            output_handle = open(outfile, 'w')
-            output_handle.write('Empirical P-value\t%f\n' % emp_pval_freq)
-            output_handle.write('Cosine Distance\t%f\n' % round(cosine_distance, 3))
-            output_handle.write('Spearman\'s Rho\t%f\n' % round(rho, 3))
-            output_handle.write('Codons\t%s\n' % ', '.join(cod_order))
-            output_handle.write('Focal Region Codon Frequencies\t%s\n' % ', '.join([str(int(x)) for x in foc_cod_freqs]))
-            output_handle.write('Background Genome Codon Frequencies\t%s\n' % ', '.join([str(int(x)) for x in bkg_cod_freqs]))
-            output_handle.close()
-        except Exception:
-            sys.stderr.write("Issue creating output file!\n")
-            sys.stderr.write(traceback.format_exc() + '\n')
-            sys.exit(1)    
+    # Calculate empirical frequency (with +1 smoothing)
+    # This represents the proportion of simulations as or more extreme than observed
+    empirical_freq = (extreme_count + 1) / (num_sims + 1)
+
+    result = {
+        'empirical_freq': empirical_freq,
+        'cosine_distance': float(cosine_distance),
+        'rho': float(rho),
+        'codon_order': cod_order,
+        'focal_region_codons': [int(x) for x in list(foc_cod_freqs)],
+        'background_genome_codons': [int(x) for x in list(bkg_cod_freqs)],
+    }
     
-    if plot_outfile is not None:           
+    if plot_outfile is not None:
         plot_outfile = os.path.abspath(plot_outfile)
-
-        # Create a fresh figure for this plot and close it after saving
         sns.set_theme(style='white')
         plt.figure()
-        ax = sns.histplot(sim_cosine_distances, color='grey')
-        ax.axvline(cosine_distance, color='#398cbf')
+        sns.histplot(sim_cosine_distances, color='grey', alpha=0.5, label='Null distribution')
+        plt.axvline(cosine_distance, color='#2d5f8b', label='Observed distance')
         plt.xlabel('Simulated cosine distances')
+        plt.legend()
         plt.tight_layout()
         plt.savefig(plot_outfile, format='svg')
         plt.close()
 
-    result = {'emp_pval_freq': emp_pval_freq, 
-              'cosine_distance': float(cosine_distance), 
-              'rho': float(rho), 
-              'codon_order': cod_order, 
-              'focal_region_codons': [int(x) for x in list(foc_cod_freqs)], 
-              'background_genome_codons': [int(x) for x in list(bkg_cod_freqs)]}
-    return(result)
+    return result

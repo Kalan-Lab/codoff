@@ -6,8 +6,9 @@ warnings.filterwarnings("ignore", category=DeprecationWarning)
 import os
 import sys
 import argparse
+# Add src to path to import codoff
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 from codoff import codoff
-import traceback
 import importlib.metadata
 
 version = "NA"
@@ -27,9 +28,9 @@ def create_parser():
 	This program compares the codon-usage distribution of a focal-region/BGC 
 	to the codon usage of the background genome. It will report the cosine 
 	distance and Spearman correlation between the two profiles, as well as
-	an empirical P-value for whether the codon usage is siginficantly 
-	different between the focal region and background genome. Only CDS 
-	features which are of length divisible by 3 will be considered. 
+	a discordance percentile indicating how unusual the focal region's codon 
+	usage is compared to similarly sized genomic windows. Only CDS features 
+	which are of length divisible by 3 will be considered. 
 									 
 	Two modes of input are supported:
 									 
@@ -80,16 +81,21 @@ def create_parser():
 		help="Plot output file name (will be in SVG format). If not provided, no\n"
 			 "plot will be made.", 
 		required=False, default=None)
-	parser.add_argument('--num-sims', type=int,
-		help="Number of simulations to run [Default: 10000]",
+	parser.add_argument('-ns', '--num-sims', type=int,
+		help="Number of simulations to run [Default: 10000].",
 		required=False, default=10000)
 	parser.add_argument('-v', '--version', action='store_true', 
 		help="Print version and exist", 
 		required=False, default=False)
+	parser.add_argument('-x', '--seed', type=int,
+		help="Random seed for reproducible results [Default: 42].",
+		required=False, default=42)
+	parser.add_argument('-m', '--max-focal-cds-fraction', type=float,
+		help="Maximum allowed fraction of total genome CDS length for focal region [Default: 0.05].",
+		required=False, default=0.05)
 	args = parser.parse_args()
 	return args
 
-valid_bases = set(['A', 'C', 'G', 'T'])
 def main():
 	"""
 	Void function which runs primary workflow for program.
@@ -112,11 +118,13 @@ def main():
 	outfile = myargs.outfile
 	plot_outfile = myargs.plot_outfile
 	num_sims = myargs.num_sims
+	seed = myargs.seed
+	max_focal_cds_fraction = myargs.max_focal_cds_fraction
 
 	"""
 	START WORKFLOW
 	"""
-	
+
 	if focal_genbank_files != None:
 		codoff.codoff_main_gbk(
 			full_genome_file=full_genome_file,
@@ -124,7 +132,9 @@ def main():
 			outfile=outfile,
 			plot_outfile=plot_outfile,
 			verbose=True,
-			num_sims=num_sims
+			num_sims=num_sims,
+			seed=seed,
+			max_focal_cds_fraction=max_focal_cds_fraction
 		)
 	elif focal_scaffold != None and focal_start_coord != None and focal_end_coord != None:
 		codoff.codoff_main_coords(
@@ -135,7 +145,9 @@ def main():
 			outfile=outfile,
 			plot_outfile=plot_outfile,
 			verbose=True,
-			num_sims=num_sims
+			num_sims=num_sims,
+			seed=seed,
+			max_focal_cds_fraction=max_focal_cds_fraction
 		)
 	else:
 		sys.stderr.write('Error: Insuffient input provided!\n')

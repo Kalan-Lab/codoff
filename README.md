@@ -65,9 +65,9 @@ bash run_test_case.sh
 This should take around half a minute:
 
 ```
-real	0m34.700s
-user	0m32.973s
-sys	0m0.558s
+real   0m34.700s
+user   0m32.973s
+sys    0m0.558s
 ```
 
 You can explore the results and also compare the results you produced in the `Csimulans_Data/` folder with the expected results in `Csimulans_Data/expected_results_v1.2.3/` folder.

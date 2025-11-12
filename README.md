@@ -97,10 +97,6 @@ Here, we also requested the `-p` argument to generate a plot of the simulated di
 
 ![figure](https://raw.githubusercontent.com/Kalan-Lab/codoff/main/images/NZ_CP014634.1.region001.svg)
 
-### Detailed example with interpretation
-
-A more detailed example on how homologous instances of the same five-gene operon differ in codon usage between an instance on the plasmid and chromosome can be found on the wiki: [Examples of inferring codon usage for the *crt* operon in a chromosomal and plasmid context](https://github.com/Kalan-Lab/codoff/wiki/Investigating-BGCs-from-Corynebacterium-simulans)
-
 ## Algorithm for computing Discordance Percentile
 
 codoff uses a Monte Carlo simulation approach to calculate a discordance percentile to assess codon usage differences between the focal region(s) of interest and the background genome. The algorithm works as follows:
@@ -134,8 +130,6 @@ For each of N simulations (default: 10,000, configurable with `--num-sims`):
 
 This approach tests whether the observed focal region's codon usage is significantly different from what would be expected for a randomly positioned contiguous genomic region of the same size.
 
-**Note**: Genomic coordinates are required for this method. The program will exit with an error if proper CDS feature locations are not available in the GenBank files.
-
 ### 4. Result Interpretation
 
 codoff reports a **Discordance Percentile** that indicates where the focal region ranks among all similarly sized genomic windows:
@@ -145,6 +139,9 @@ Discordance Percentile = (count of simulations with distance ≥ observed distan
 ```
 
 For example, a percentile of 5.0 means the focal region is within the **top 5% most discordant regions** in terms of codon usage compared to the rest of the genome. Lower percentiles indicate more unusual/discordant codon usage, which may be evidence of horizontal gene transfer or other unusual evolutionary processes.
+
+> [!NOTE]
+> Previously, codoff (<v1.2.2) reported an empirical p-value instead of a dicsocrdance percentile - the two metrics are related in that the discordance percentile is largely just the p-value multiplied by 100. This change was to make the value more easy to interpret and also to simplify the investigation of codoff runs for multiple focal regions (e.g. multiple BGCs across multiple genomes), where expectations of independence across tests might not stand. Note, that in v1.2.3, we also changed the way we perform simulations - so results might also further differ from v1.2.2 based on this.
 
 ### 5. Reproducibility
 

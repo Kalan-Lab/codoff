@@ -136,7 +136,7 @@ codoff reports a **Discordance Percentile** that indicates where the focal regio
 Discordance Percentile = (count of simulations with distance ≥ observed distance + 1) / (total simulations + 1) × 100
 ```
 
-For example, a percentile of 5.0 means the focal region is within the **top 5% most discordant regions** in terms of codon usage compared to the rest of the genome. Lower percentiles indicate more unusual/discordant codon usage, which may be evidence of horizontal gene transfer or other unusual regulatory or evolutionary processes.
+For example, a percentile of 5.0 means the focal region is within the **top 5% most discordant regions** in terms of codon usage compared to the rest of the genome. Lower percentiles indicate more unusual/discordant codon usage, which may be evidence of horizontal gene transfer or unusual regulatory or evolutionary processes.
 
 > [!NOTE]
 > Previously, codoff (<v1.2.2) reported an empirical p-value instead of a dicsocrdance percentile - the two metrics are related in that the discordance percentile is largely just the p-value multiplied by 100. This change was to make the value more easy to interpret and also to simplify the investigation of codoff runs for multiple focal regions (e.g. multiple BGCs across multiple genomes), where expectations of independence across tests might not stand. Note, that in v1.2.3, we also changed the way we perform simulations - so results will also further differ from v1.2.2 based on this.

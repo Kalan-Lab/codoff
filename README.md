@@ -6,14 +6,15 @@
 
 **codoff**: A program to measure the irregularity of the codon usage for a focal genomic region (e.g. a BGC, prophage, etc.) relative to the full genome. It was primarily designed to work off the output of antiSMASH biosynthetic gene cluster (BGC) predictions - but can be more broadly applied as well, with options allowing users to provide a genome in FASTA format and simply specify the coordinates of the focal region of interest. It uses sequential contiguous-window sampling (v1.2.3+) to compare the focal region against randomly positioned genomic windows of the same size, reporting a discordance percentile that indicates how unusual the codon usage is compared to the rest of the genome.
 
-<img src="https://github.com/Kalan-Lab/codoff/assets/4260723/05b6c7f1-9e8f-4865-b0fd-758c933bab83" width="300"> 
-
 > [!IMPORTANT]
 > **This is useful because it could indicate that the focal gene cluster has been horizontally transfered. While quick and easy to assess, we encourage users to further investigate if HGT is indeed responsible for any such signal. This is because a discordance between the codon usage for the focal gene cluster and background genome could be due to other reasons, e.g. infrequent/highly-conditional expression of the focal gene cluster.**
 
-codoff is largely adapted from the `compareBGCtoGenomeCodonUsage.py` script in the [*lsa*BGC](https://github.com/Kalan-Lab/lsaBGC) suite and presented here separately just to make it easy to install via Bioconda.
+> [!NOTE]
+> codoff is derived from the `compareBGCtoGenomeCodonUsage.py` script in the [*lsa*BGC](https://github.com/Kalan-Lab/lsaBGC) suite. It has since been significantly improved; both in terms of efficiency and the quality of the model used to assess codon-usage divergance of the focal region relative to its genomic context.
 
 If you have suggestions or feedback, please let us know in the GitHub issues.
+
+<img src="https://github.com/Kalan-Lab/codoff/assets/4260723/05b6c7f1-9e8f-4865-b0fd-758c933bab83" width="300"> 
 
 ## Installation
 
